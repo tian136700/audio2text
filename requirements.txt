@@ -1,0 +1,7 @@
+torch==2.1.2
+flask
+requests
+gevent
+faster-whisper
+fsspec
+opencc-python-reimplemented
