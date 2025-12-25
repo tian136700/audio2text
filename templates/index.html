@@ -303,24 +303,16 @@
 
     <script src="/static/layui/layui.js"></script>
     <script>
-      let language = "{{ language }}";
+      let language = "zh"; // 强制使用中文
       window.$ = layui.$;
       let intervalId = null;
-      if (language === "zh") {
-        $("[data-cn]").each(function () {
-          $(this).html($(this).html() + $(this).attr("data-cn"));
-        });
-        $("[placeholder-cn]").each(function () {
-          $(this).attr("placeholder", $(this).attr("placeholder-cn"));
-        });
-      } else {
-        $("[data-en]").each(function () {
-          $(this).html($(this).html() + $(this).attr("data-en"));
-        });
-        $("[placeholder-en]").each(function () {
-          $(this).attr("placeholder", $(this).attr("placeholder-en"));
-        });
-      }
+      // 强制显示中文
+      $("[data-cn]").each(function () {
+        $(this).html($(this).html() + $(this).attr("data-cn"));
+      });
+      $("[placeholder-cn]").each(function () {
+        $(this).attr("placeholder", $(this).attr("placeholder-cn"));
+      });
       /** 即将要处理的文件信息 */
       var pending_files = [];
 
