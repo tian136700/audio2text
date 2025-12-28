@@ -191,6 +191,8 @@ def shibie():
                 end = int(segment.end * 1000)
                 startTime = tool.ms_to_time_string(ms=start)
                 endTime = tool.ms_to_time_string(ms=end)
+                startReadable = tool.ms_to_readable_time(ms=start)
+                endReadable = tool.ms_to_readable_time(ms=end)
                 text = segment.text.strip().replace('&#39;', "'")
                 text = re.sub(r'&#\d+;', '', text)
 
@@ -206,6 +208,8 @@ def shibie():
                         {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text})
                 elif data_type == 'text':
                     raw_subtitles.append(text)
+                elif data_type == 'readable':
+                    raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
                 else:
                     raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
             cfg.progressbar[key]=1
@@ -244,6 +248,106 @@ def process():
     #存入任务队列
     cfg.TASK_QUEUE.append({"wav_name":wav_name, "model":model, "language":language, "data_type":data_type, "wav_file":wav_file, "key":key})
     return jsonify({"code":0, "msg":"ing"})
+
+# 测试识别接口 - 截取前5分钟进行测试
+@app.route('/test_process', methods=['GET', 'POST'])
+def test_process():
+    try:
+        wav_name = request.form.get("wav_name","").strip()
+        if not wav_name:
+            return jsonify({"code": 1, "msg": f"No file had uploaded"})
+        model = request.form.get("model")
+        language = request.form.get("language")
+        data_type = request.form.get("data_type")
+        wav_file = os.path.join(cfg.TMP_DIR, wav_name)
+        if not os.path.exists(wav_file):
+            return jsonify({"code": 1, "msg": f"{wav_file} {cfg.transobj['lang5']}"})
+        
+        # 创建测试用的音频文件（截取前5分钟）
+        test_wav_file = os.path.join(cfg.TMP_DIR, f"test_{wav_name}")
+        params = [
+            "-i",
+            wav_file,
+            "-t",
+            "300",  # 截取300秒（5分钟）
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-y",
+            test_wav_file
+        ]
+        rs = tool.runffmpeg(params)
+        if rs != 'ok':
+            return jsonify({"code": 1, "msg": f"截取音频失败: {rs}"})
+        
+        # 使用_api_process进行识别
+        try:
+            sets=cfg.parse_ini()
+            if model.startswith('distil-'):
+                model = model.replace('-whisper', '')
+            modelobj = WhisperModel(
+                model, 
+                device=sets.get('devtype'), 
+                download_root=cfg.ROOT_DIR + "/models"
+            )
+        except Exception as e:
+            return jsonify({"code": 1, "msg": f"加载模型失败: {str(e)}"})
+        
+        try:
+            segments, info = modelobj.transcribe(
+                test_wav_file, 
+                beam_size=sets.get('beam_size'),
+                best_of=sets.get('best_of'),
+                condition_on_previous_text=sets.get('condition_on_previous_text'),
+                vad_filter=sets.get('vad'),    
+                language=language if language and language != 'auto' else None,
+                initial_prompt=sets.get('initial_prompt_zh')
+            )
+            
+            raw_subtitles = []
+            for segment in segments:
+                start = int(segment.start * 1000)
+                end = int(segment.end * 1000)
+                startTime = tool.ms_to_time_string(ms=start)
+                endTime = tool.ms_to_time_string(ms=end)
+                startReadable = tool.ms_to_readable_time(ms=start)
+                endReadable = tool.ms_to_readable_time(ms=end)
+                text = segment.text.strip().replace('&#39;', "'")
+                text = re.sub(r'&#\d+;', '', text)
+
+                if not text or re.match(r'^[，。、？''""；：（｛｝【】）:;"\'\s \d`!@#$%^&*()_+=.,?/\\-]*$', text) or len(text) <= 1:
+                    continue
+                if cfg.cc is not None:
+                    text=cfg.cc.convert(text)
+                if data_type == 'json':
+                    raw_subtitles.append(
+                        {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text})
+                elif data_type == 'text':
+                    raw_subtitles.append(text)
+                elif data_type == 'readable':
+                    raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
+                else:
+                    raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
+            
+            if data_type != 'json':
+                result = "\n".join(raw_subtitles)
+            else:
+                result = raw_subtitles
+            
+            # 清理测试文件
+            try:
+                if os.path.exists(test_wav_file):
+                    os.remove(test_wav_file)
+            except:
+                pass
+            
+            return jsonify({"code": 0, "msg": "测试识别完成", "result": result, "duration": round(info.duration, 2)})
+        except Exception as e:
+            return jsonify({"code": 1, "msg": f"识别失败: {str(e)}"})
+    except Exception as e:
+        app.logger.error(f'[test_process]error: {e}')
+        return jsonify({"code": 1, "msg": str(e)})
 
 # 前端获取进度及完成后的结果
 @app.route('/progressbar', methods=['GET', 'POST'])
@@ -410,11 +514,13 @@ def _api_process(model_name,wav_file,language=None,response_format="text",prompt
         end = int(segment.end * 1000)
         startTime = tool.ms_to_time_string(ms=start)
         endTime = tool.ms_to_time_string(ms=end)
+        startReadable = tool.ms_to_readable_time(ms=start)
+        endReadable = tool.ms_to_readable_time(ms=end)
         text = segment.text.strip().replace('&#39;', "'")
         text = re.sub(r'&#\d+;', '', text)
 
         # 无有效字符
-        if not text or re.match(r'^[，。、？‘’“”；：（｛｝【】）:;"\'\s \d`!@#$%^&*()_+=.,?/\\-]*$', text) or len(text) <= 1:
+        if not text or re.match(r'^[，。、？''""；：（｛｝【】）:;"\'\s \d`!@#$%^&*()_+=.,?/\\-]*$', text) or len(text) <= 1:
             continue
         if response_format == 'json':
             # 原语言字幕
@@ -422,6 +528,8 @@ def _api_process(model_name,wav_file,language=None,response_format="text",prompt
                 {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text})
         elif response_format == 'text':
             raw_subtitles.append(text)
+        elif response_format == 'readable':
+            raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
         else:
             raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
     if response_format != 'json':

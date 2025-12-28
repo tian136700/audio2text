@@ -210,6 +210,7 @@
                   data-cn="srt字幕"
                   data-en="Subtitles srt"
                 ></option>
+                <option value="readable" data-cn="易读格式（几分几秒）" data-en="Readable format (min:sec)"></option>
                 <option value="json">json</option>
                 <option value="text" data-cn="纯文字" data-en="text"></option>
               </select>
@@ -258,6 +259,18 @@
           <div class="layui-form-item layui-form-block">
             <input type="hidden" id="wav_name" name="wav_name" />
             <button
+              type="button"
+              class="layui-btn layui-btn-normal"
+              data-cn="测试识别（前5分钟）"
+              data-en="Test Recognition (First 5 min)"
+              id="test-btn"
+            >
+              <i
+                style="display: none"
+                class="layui-icon-loading layui-icon layui-anim layui-anim-rotate layui-anim-loop"
+              ></i>
+            </button>
+            <button
               type="submit"
               class="layui-btn layui-btn-danger"
               lay-submit
@@ -280,6 +293,23 @@
           </div>
         </form>
 		
+
+        <!-- 测试结果显示区域 -->
+        <div class="layui-card layui-hide" id="test-result-card" style="margin-bottom: 15px;">
+          <div class="layui-card-header">
+            <span data-cn="测试识别结果（前5分钟）" data-en="Test Recognition Result (First 5 min)"></span>
+            <button type="button" class="layui-btn layui-btn-sm layui-btn-primary" id="confirm-test-btn" style="float: right; margin-top: -5px;" data-cn="确认，继续完整识别" data-en="Confirm, Continue Full Recognition"></button>
+          </div>
+          <div class="layui-card-body" style="padding: 10px 0">
+            <textarea
+              class="layui-textarea"
+              id="test-result"
+              readonly
+              cols="30"
+              rows="8"
+            ></textarea>
+          </div>
+        </div>
 
         <div class="layui-card">
           <div class="layui-card-body text-contain" style="padding: 10px 0">
@@ -531,6 +561,122 @@
 
           
         });
+        
+        // 测试识别按钮
+        $("#test-btn").click(function () {
+          if (processing) {
+            return;
+          }
+          if (!pending_files.length) {
+            layer.alert(
+              language === "zh"
+                ? "必须先上传要识别的音频或视频文件!"
+                : "The file to be recognition must be uploaded first!",
+              { title: false }
+            );
+            return;
+          }
+          
+          var field = {
+            model: $("select[name='model']").val(),
+            language: $("select[name='language']").val(),
+            data_type: $("#data_type").val()
+          };
+          
+          if(field['model'].endsWith('.en') && field['language']!='en'){
+            layer.alert(
+              language === "zh"
+                ? "en结尾的模型只可用于确定的英语语音识别!"
+                : "Models ending in en can only be used for English speech recognition!",
+              { title: false }
+            );
+            return;
+          }
+          
+          // 只测试第一个文件
+          var testFile = pending_files[0];
+          if (!testFile || !testFile.data) {
+            layer.alert(
+              language === "zh"
+                ? "没有可测试的文件!"
+                : "No file to test!",
+              { title: false }
+            );
+            return;
+          }
+          
+          // 显示加载状态
+          processing = true;
+          $("#test-btn").addClass("layui-btn-disabled").find("i").show();
+          $("#test-result-card").addClass("layui-hide");
+          
+          // 发送测试请求
+          $.ajax({
+            url: "/test_process",
+            method: "POST",
+            data: {
+              wav_name: testFile.data,
+              model: field.model,
+              language: field.language,
+              data_type: field.data_type
+            },
+            success: function (res) {
+              processing = false;
+              $("#test-btn").removeClass("layui-btn-disabled").find("i").hide();
+              
+              if (res.code !== 0) {
+                layer.alert(
+                  language === "zh"
+                    ? "测试识别失败: " + res.msg
+                    : "Test recognition failed: " + res.msg,
+                  { title: false }
+                );
+                return;
+              }
+              
+              // 显示测试结果
+              function getText(res) {
+                try {
+                  if (typeof res === "string") {
+                    return res;
+                  }
+                  return JSON.stringify(res);
+                } catch (e) {
+                  return res;
+                }
+              }
+              
+              $("#test-result").val(getText(res.result));
+              $("#test-result-card").removeClass("layui-hide");
+              
+              var duration = res.duration || 0;
+              layer.msg(
+                language === "zh"
+                  ? `测试识别完成！已识别 ${duration.toFixed(2)} 秒音频`
+                  : `Test recognition completed! Recognized ${duration.toFixed(2)} seconds of audio`
+              );
+            },
+            error: function (xhr, status, error) {
+              processing = false;
+              $("#test-btn").removeClass("layui-btn-disabled").find("i").hide();
+              layer.alert(
+                language === "zh"
+                  ? "测试识别失败: " + error
+                  : "Test recognition failed: " + error,
+                { title: false }
+              );
+            }
+          });
+        });
+        
+        // 确认继续完整识别
+        $("#confirm-test-btn").click(function () {
+          // 隐藏测试结果
+          $("#test-result-card").addClass("layui-hide");
+          // 触发完整识别
+          $("#submit-btn").click();
+        });
+        
         // 提交事件
         form.on("submit(submit)", function (data) {
           console.log('submit', data)
