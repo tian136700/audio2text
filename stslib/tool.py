@@ -69,3 +69,16 @@ def ms_to_time_string(*, ms=0, seconds=None):
     time_string = f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
     return time_string
+
+def ms_to_readable_time(*, ms=0, seconds=None):
+    # 将毫秒或秒转换为更易读的格式，例如 "0小时0分14秒"
+    if seconds is None:
+        total_seconds = ms // 1000
+    else:
+        total_seconds = int(seconds)
+    
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    remaining_seconds = total_seconds % 60
+    
+    return f"{hours}小时{minutes}分{remaining_seconds}秒"

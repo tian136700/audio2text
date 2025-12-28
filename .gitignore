@@ -1,16 +1,91 @@
-venv
-.idea
-build
-dist
-models/models--Systran--faster-whisper-base
-models/models--Systran--faster-whisper-tiny
+# Python
+venv/
+env/
+ENV/
+.venv
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.pycharm/
+*.sublime-project
+*.sublime-workspace
+
+# 模型文件（通常很大，不应提交）
+models/models--*/
+models/.locks/
+*.bin
+*.safetensors
+
+# 日志文件
 *.log
+sts.log
+
+# 临时音频/视频文件
 *.wav
 *.mp3
+*.mp4
+*.m4a
+*.flac
+*.aac
+*.avi
+*.mkv
+*.mpeg
+*.mov
+*.wma
+*.ogg
+
+# 临时目录
+static/tmp/
+static/file/
+test_*.wav
+
+# 构建和打包
 *.spec
 *.exe
 *.zip
+*.tar.gz
+*.rar
+*.7z
+build/
+dist/
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# 环境变量文件（可能包含敏感信息）
+.env
+.env.local
+*.ini.bak
+
+# FFmpeg 可执行文件
 ffmpeg
-static/tmp
-static/file
-stslib/__pycache__
+ffmpeg.exe
+ffprobe
+ffprobe.exe
+
+# 注意：以下文件应该提交到 git
+# - set.ini (配置文件模板)
+# - test.py (API 使用示例)
+# - testcuda.py (CUDA 测试文件)
