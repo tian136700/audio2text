@@ -41,10 +41,102 @@ from faster_whisper import WhisperModel
 import time
 from werkzeug.utils import secure_filename
 import uuid
+import cut_tool
+
+# 说话人识别相关
+try:
+    from pyannote.audio import Pipeline
+    PYANNOTE_AVAILABLE = True
+except ImportError:
+    PYANNOTE_AVAILABLE = False
+    print("警告: pyannote.audio 未安装，说话人识别功能将不可用")
 
 class CustomRequestHandler(WSGIHandler):
     def log_request(self):
         pass
+
+# 说话人识别管道（全局变量，避免重复加载）
+DIARIZATION_PIPELINE = None
+
+def get_diarization_pipeline(device='cpu'):
+    global DIARIZATION_PIPELINE
+    if DIARIZATION_PIPELINE is None:
+        try:
+            from huggingface_hub import login
+
+            # 读取 token（可写入 ~/.stt/set.ini）
+            sets = cfg.parse_ini()
+            hf_token = sets.get("hf_token") or os.environ.get("HF_TOKEN")
+
+            if hf_token:
+                login(hf_token)  # 登录一次即可，以后不用再传 token
+
+            # ⚠ 新版正确使用方式——不再传 token！
+            DIARIZATION_PIPELINE = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1"
+            )
+
+            DIARIZATION_PIPELINE.to(torch.device(device))
+            print("pyannote 说话人识别模型加载成功！")
+        except Exception as e:
+            print("❌ pyannote 加载失败：", e)
+            return None
+
+    return DIARIZATION_PIPELINE
+
+
+def perform_diarization(wav_file, device='cpu'):
+    """执行说话人分离，返回时间段和说话人标签的映射"""
+    pipeline = get_diarization_pipeline(device)
+    if pipeline is None:
+        return None
+    
+    try:
+        # 执行说话人分离
+        diarization = pipeline(wav_file)
+        
+        # 将结果转换为字典，key为时间段，value为说话人标签
+        speaker_segments = {}
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
+            start_time = turn.start
+            end_time = turn.end
+            # 将时间段转换为毫秒，用于后续匹配
+            start_ms = int(start_time * 1000)
+            end_ms = int(end_time * 1000)
+            # 存储每个时间段对应的说话人
+            speaker_segments[(start_ms, end_ms)] = speaker
+        
+        return speaker_segments
+    except Exception as e:
+        print(f"说话人分离失败: {e}")
+        return None
+
+def get_speaker_for_segment(segment_start, segment_end, speaker_segments):
+    """根据时间段匹配说话人"""
+    if speaker_segments is None:
+        return None
+    
+    segment_start_ms = int(segment_start * 1000)
+    segment_end_ms = int(segment_end * 1000)
+    
+    # 找到与当前片段重叠最多的说话人时间段
+    best_speaker = None
+    max_overlap = 0
+    
+    for (spk_start, spk_end), speaker in speaker_segments.items():
+        # 计算重叠时间
+        overlap_start = max(segment_start_ms, spk_start)
+        overlap_end = min(segment_end_ms, spk_end)
+        overlap = max(0, overlap_end - overlap_start)
+        
+        # 如果重叠时间超过片段长度的50%，则认为匹配
+        segment_duration = segment_end_ms - segment_start_ms
+        if segment_duration > 0 and overlap / segment_duration > 0.5:
+            if overlap > max_overlap:
+                max_overlap = overlap
+                best_speaker = speaker
+    
+    return best_speaker
 
 
 # 配置日志
@@ -88,6 +180,22 @@ def index():
     )
 
 
+@app.route('/cut', methods=['GET'])
+def cut_page():
+    """
+    音频截取独立页面
+    访问地址: http://127.0.0.1:9977/cut
+    """
+    sets = cfg.parse_ini()
+    return render_template(
+        "cut.html",
+        version=stslib.version_str,
+        lang_code=cfg.lang_code,
+        language=cfg.LANG,
+        devtype=sets.get("devtype"),
+    )
+
+
 # 上传音频
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -128,6 +236,51 @@ def upload():
         app.logger.error(f'[upload]error: {e}')
         return jsonify({'code': 2, 'msg': cfg.transobj['lang2']})
 
+
+@app.route('/cut_audio', methods=['POST'])
+def cut_audio():
+    """
+    根据开始/结束时间截取音频
+    """
+    wav_name = request.form.get("wav_name", "").strip()
+    start_time = request.form.get("start_time", "").strip()
+    end_time = request.form.get("end_time", "").strip()
+
+    if not wav_name:
+        return jsonify({"code": 1, "msg": "源音频文件不能为空"})
+    if not start_time or not end_time:
+        return jsonify({"code": 1, "msg": "开始时间和结束时间不能为空"})
+
+    src_wav = os.path.join(cfg.TMP_DIR, wav_name)
+    if not os.path.exists(src_wav):
+        return jsonify({"code": 1, "msg": f"源音频不存在: {wav_name}"})
+
+    try:
+        out_path, url = cut_tool.cut_audio_segment(src_wav, start_time, end_time)
+        file_name = os.path.basename(out_path)
+        return jsonify(
+            {
+                "code": 0,
+                "msg": "截取成功",
+                "file_name": file_name,
+                "url": url,
+            }
+        )
+    except Exception as e:
+        return jsonify({"code": 1, "msg": str(e)})
+
+
+@app.route('/cut_history', methods=['GET'])
+def cut_history():
+    """
+    查看历史截取记录
+    """
+    try:
+        data = cut_tool.list_cut_history()
+        return jsonify({"code": 0, "data": data})
+    except Exception as e:
+        return jsonify({"code": 1, "msg": str(e)})
+
 # 后端线程处理
 def shibie():
     while 1:
@@ -155,6 +308,7 @@ def shibie():
         wav_file = task['wav_file']
         key = task['key']
         prompt=task.get('prompt',sets.get('initial_prompt_zh'))
+        enable_speaker = task.get('enable_speaker', False)  # 是否启用说话人识别
         
         cfg.progressbar[key]=0
         print(f'{model=}')
@@ -184,6 +338,25 @@ def shibie():
             )
             total_duration = round(info.duration, 2)  # Same precision as the Whisper timestamps.
 
+            # 如果启用说话人识别，执行说话人分离
+            speaker_segments = None
+            if enable_speaker:
+                if not PYANNOTE_AVAILABLE:
+                    print("警告：pyannote.audio 未安装，说话人识别功能不可用。请运行: pip install pyannote.audio")
+                else:
+                    try:
+                        device = 'cuda' if sets.get('devtype') == 'cuda' and torch.cuda.is_available() else 'cpu'
+                        print(f"开始执行说话人识别（设备: {device}）...")
+                        speaker_segments = perform_diarization(wav_file, device)
+                        if speaker_segments:
+                            print(f"说话人识别完成，识别到 {len(speaker_segments)} 个说话人时间段")
+                        else:
+                            print("说话人识别返回空结果，将不显示说话人信息")
+                    except Exception as e:
+                        print(f"说话人识别出错: {e}")
+                        import traceback
+                        traceback.print_exc()
+
             raw_subtitles = []
             for segment in segments:
                 cfg.progressbar[key]=round(segment.end/total_duration, 2)
@@ -202,16 +375,43 @@ def shibie():
                     continue
                 if cfg.cc is not None:
                     text=cfg.cc.convert(text)
+                
+                # 获取说话人信息
+                speaker_label = None
+                if speaker_segments:
+                    speaker = get_speaker_for_segment(segment.start, segment.end, speaker_segments)
+                    if speaker:
+                        # 将说话人标签转换为 A/B 格式
+                        # speaker 通常是 "SPEAKER_00", "SPEAKER_01" 等格式
+                        speaker_num = speaker.replace("SPEAKER_", "")
+                        try:
+                            speaker_idx = int(speaker_num)
+                            # 将数字转换为字母：0->A, 1->B, 2->C...
+                            speaker_label = chr(65 + speaker_idx)  # 65 是 'A' 的 ASCII 码
+                        except:
+                            speaker_label = speaker
+                
                 if data_type == 'json':
                     # 原语言字幕
-                    raw_subtitles.append(
-                        {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text})
+                    subtitle_item = {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text}
+                    if speaker_label:
+                        subtitle_item["speaker"] = f"说话人{speaker_label}"
+                    raw_subtitles.append(subtitle_item)
                 elif data_type == 'text':
-                    raw_subtitles.append(text)
+                    if speaker_label:
+                        raw_subtitles.append(f'说话人{speaker_label}: {text}')
+                    else:
+                        raw_subtitles.append(text)
                 elif data_type == 'readable':
-                    raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
+                    if speaker_label:
+                        raw_subtitles.append(f'说话人{speaker_label}   {startReadable} - {endReadable}   {text}')
+                    else:
+                        raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
                 else:
-                    raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
+                    if speaker_label:
+                        raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n说话人{speaker_label}: {text}\n')
+                    else:
+                        raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
             cfg.progressbar[key]=1
             if data_type != 'json':
                 raw_subtitles = "\n".join(raw_subtitles)
@@ -236,17 +436,19 @@ def process():
     language = request.form.get("language")
     # 返回格式 json txt srt
     data_type = request.form.get("data_type")
+    # 是否启用说话人识别
+    enable_speaker = request.form.get("enable_speaker", "off") == "on"
     wav_file = os.path.join(cfg.TMP_DIR, wav_name)
     if not os.path.exists(wav_file):
         return jsonify({"code": 1, "msg": f"{wav_file} {cfg.transobj['lang5']}"})
 
-    key=f'{wav_name}{model}{language}{data_type}'
+    key=f'{wav_name}{model}{language}{data_type}{enable_speaker}'
     #重设结果为none
     cfg.progressresult[key]=None
     # 重设进度为0
     cfg.progressbar[key]=0
     #存入任务队列
-    cfg.TASK_QUEUE.append({"wav_name":wav_name, "model":model, "language":language, "data_type":data_type, "wav_file":wav_file, "key":key})
+    cfg.TASK_QUEUE.append({"wav_name":wav_name, "model":model, "language":language, "data_type":data_type, "wav_file":wav_file, "key":key, "enable_speaker":enable_speaker})
     return jsonify({"code":0, "msg":"ing"})
 
 # 测试识别接口 - 截取前5分钟进行测试
@@ -259,6 +461,8 @@ def test_process():
         model = request.form.get("model")
         language = request.form.get("language")
         data_type = request.form.get("data_type")
+        enable_speaker = request.form.get("enable_speaker", "off") == "on"  # 是否启用说话人识别
+        print(f"测试识别请求参数: enable_speaker={enable_speaker}, data_type={data_type}, PYANNOTE_AVAILABLE={PYANNOTE_AVAILABLE}")
         wav_file = os.path.join(cfg.TMP_DIR, wav_name)
         if not os.path.exists(wav_file):
             return jsonify({"code": 1, "msg": f"{wav_file} {cfg.transobj['lang5']}"})
@@ -305,6 +509,25 @@ def test_process():
                 initial_prompt=sets.get('initial_prompt_zh')
             )
             
+            # 如果启用说话人识别，执行说话人分离
+            speaker_segments = None
+            if enable_speaker:
+                if not PYANNOTE_AVAILABLE:
+                    print("警告：pyannote.audio 未安装，说话人识别功能不可用。请运行: pip install pyannote.audio")
+                else:
+                    try:
+                        device = 'cuda' if sets.get('devtype') == 'cuda' and torch.cuda.is_available() else 'cpu'
+                        print(f"测试识别：开始执行说话人识别（设备: {device}）...")
+                        speaker_segments = perform_diarization(test_wav_file, device)
+                        if speaker_segments:
+                            print(f"测试识别：说话人识别完成，识别到 {len(speaker_segments)} 个说话人时间段")
+                        else:
+                            print("测试识别：说话人识别返回空结果")
+                    except Exception as e:
+                        print(f"测试识别：说话人识别出错: {e}")
+                        import traceback
+                        traceback.print_exc()
+            
             raw_subtitles = []
             for segment in segments:
                 start = int(segment.start * 1000)
@@ -320,15 +543,39 @@ def test_process():
                     continue
                 if cfg.cc is not None:
                     text=cfg.cc.convert(text)
+                
+                # 获取说话人信息
+                speaker_label = None
+                if speaker_segments:
+                    speaker = get_speaker_for_segment(segment.start, segment.end, speaker_segments)
+                    if speaker:
+                        speaker_num = speaker.replace("SPEAKER_", "")
+                        try:
+                            speaker_idx = int(speaker_num)
+                            speaker_label = chr(65 + speaker_idx)
+                        except:
+                            speaker_label = speaker
+                
                 if data_type == 'json':
-                    raw_subtitles.append(
-                        {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text})
+                    subtitle_item = {"line": len(raw_subtitles) + 1, "start_time": startTime, "end_time": endTime, "text": text}
+                    if speaker_label:
+                        subtitle_item["speaker"] = f"说话人{speaker_label}"
+                    raw_subtitles.append(subtitle_item)
                 elif data_type == 'text':
-                    raw_subtitles.append(text)
+                    if speaker_label:
+                        raw_subtitles.append(f'说话人{speaker_label}: {text}')
+                    else:
+                        raw_subtitles.append(text)
                 elif data_type == 'readable':
-                    raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
+                    if speaker_label:
+                        raw_subtitles.append(f'说话人{speaker_label}   {startReadable} - {endReadable}   {text}')
+                    else:
+                        raw_subtitles.append(f'{startReadable} - {endReadable}\n{text}')
                 else:
-                    raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
+                    if speaker_label:
+                        raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n说话人{speaker_label}: {text}\n')
+                    else:
+                        raw_subtitles.append(f'{len(raw_subtitles) + 1}\n{startTime} --> {endTime}\n{text}\n')
             
             if data_type != 'json':
                 result = "\n".join(raw_subtitles)
@@ -359,7 +606,9 @@ def progressbar():
     language = request.form.get("language")
     # 返回格式 json txt srt
     data_type = request.form.get("data_type")
-    key = f'{wav_name}{model_name}{language}{data_type}'
+    # 是否启用说话人识别
+    enable_speaker = request.form.get("enable_speaker", "off") == "on"
+    key = f'{wav_name}{model_name}{language}{data_type}{enable_speaker}'
     if key in cfg.progressresult and  isinstance(cfg.progressresult[key],str) and cfg.progressresult[key].startswith('error:'):
         return jsonify({"code":1,"msg":cfg.progressresult[key][6:]})
 

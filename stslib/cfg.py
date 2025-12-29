@@ -24,7 +24,8 @@ def parse_ini(file=os.path.join(ROOT_DIR,'set.ini')):
         "temperature":0,
         "condition_on_previous_text":False,
         'opencc': 't2s',
-        "initial_prompt_zh":"转录为中文简体。"
+        "initial_prompt_zh":"转录为中文简体。",
+        "hf_token": None  # Hugging Face token for speaker diarization
     }
     if not os.path.exists(file):
         return sets
@@ -43,6 +44,9 @@ def parse_ini(file=os.path.join(ROOT_DIR,'set.ini')):
                 sets[line[0]]=int(line[1])
             elif line[1].find(',')>0:
                 sets[line[0]]=line[1].split(',')
+            elif line[0] == 'hf_token':
+                # hf_token 保持原样，不转换为小写
+                sets[line[0]] = line[1] if line[1] else None
             elif line[1]:
                 sets[line[0]]=str(line[1]).lower()
     if sets['opencc'] == 's2t':

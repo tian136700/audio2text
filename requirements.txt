@@ -5,3 +5,4 @@ gevent
 faster-whisper
 fsspec
 opencc-python-reimplemented
+pyannote.audio

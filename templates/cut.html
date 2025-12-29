@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>音频截取工具</title>
+    <meta name="renderer" content="webkit" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="/static/layui/css/layui.css" rel="stylesheet" />
+    <style>
+      #content {
+        width: 95%;
+        min-width: 800px;
+        max-width: 2000px;
+        margin: 40px auto 50px;
+      }
+      .section-title {
+        font-size: 18px;
+        margin: 15px 0;
+      }
+      #upload {
+        display: block;
+        margin-bottom: 10px;
+        border-style: solid;
+        padding: 30px 20px;
+      }
+      .file-info {
+        margin-top: 10px;
+        color: #333;
+      }
+      .time-inputs {
+        margin-top: 20px;
+      }
+      .history-table {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="content">
+      <h2>音频截取工具</h2>
+      <p>步骤：1）上传音频 2）输入开始/结束时间（格式 00:00:00）3）点击“截取并保存”。</p>
+
+      <!-- 上传区域 -->
+      <div class="layui-upload-drag layui-border-green" id="upload">
+        <i class="layui-icon layui-icon-upload layui-font-green"></i>
+        <div>点击上传，或将音频/视频文件拖拽到此处（mp3/mp4/wav/m4a 等）</div>
+        <div id="uploaded-info" class="file-info"></div>
+      </div>
+
+      <!-- 预览 -->
+      <div id="audio-preview" class="file-info"></div>
+
+      <!-- 时间输入和操作 -->
+      <div class="time-inputs">
+        <div class="layui-form layui-form-pane">
+          <div class="layui-form-item">
+            <label class="layui-form-label">开始时间</label>
+            <div class="layui-input-inline">
+              <input
+                type="text"
+                id="start-time"
+                placeholder="00:00:00"
+                class="layui-input"
+              />
+            </div>
+            <div class="layui-form-mid layui-word-aux">
+              格式：时:分:秒，例如 00:01:30
+            </div>
+          </div>
+
+          <div class="layui-form-item">
+            <label class="layui-form-label">结束时间</label>
+            <div class="layui-input-inline">
+              <input
+                type="text"
+                id="end-time"
+                placeholder="00:05:00"
+                class="layui-input"
+              />
+            </div>
+            <div class="layui-form-mid layui-word-aux">
+              必须大于开始时间
+            </div>
+          </div>
+
+          <div class="layui-form-item">
+            <button
+              type="button"
+              class="layui-btn layui-btn-danger"
+              id="cut-btn"
+            >
+              截取并保存
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 截取结果 -->
+      <div id="cut-result" class="file-info"></div>
+
+      <!-- 历史记录 -->
+      <div class="history-table">
+        <div class="section-title">历史截取记录</div>
+        <table class="layui-table" id="history-table">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>大小 (KB)</th>
+              <th>下载</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script src="/static/layui/layui.js"></script>
+    <script>
+      layui.use(["upload", "layer"], function () {
+        var upload = layui.upload;
+        var layer = layui.layer;
+        var $ = layui.$;
+
+        var currentWav = null; // 当前上传并转换后的 wav 文件名
+
+        // 上传
+        upload.render({
+          elem: "#upload",
+          field: "audio",
+          accept: "file",
+          exts: "mp4|mp3|flac|wav|aac|m4a|avi|mkv|mpeg|mov",
+          multiple: false,
+          url: "/upload",
+          before: function () {
+            currentWav = null;
+            $("#uploaded-info").text("正在上传并转换为 wav，请稍候...");
+            $("#audio-preview").html("");
+          },
+          done: function (res) {
+            if (res.code !== 0) {
+              layer.alert("上传失败：" + res.msg, { title: false });
+              return;
+            }
+            currentWav = res.data;
+            $("#uploaded-info").text("上传成功，已转换为 wav: " + currentWav);
+            $("#audio-preview").html(
+              '<audio src="/static/tmp/' +
+                currentWav +
+                '" controls style="width: 100%;"></audio>'
+            );
+          },
+          error: function () {
+            layer.alert("上传失败，请重试", { title: false });
+          },
+        });
+
+        // 截取按钮
+        $("#cut-btn").click(function () {
+          if (!currentWav) {
+            layer.alert("请先上传要截取的音频文件！", { title: false });
+            return;
+          }
+          var startTime = $("#start-time").val().trim();
+          var endTime = $("#end-time").val().trim();
+          if (!startTime || !endTime) {
+            layer.alert("开始时间和结束时间不能为空！", { title: false });
+            return;
+          }
+
+          layer.load();
+          $.post(
+            "/cut_audio",
+            {
+              wav_name: currentWav,
+              start_time: startTime,
+              end_time: endTime,
+            },
+            function (res) {
+              layer.closeAll("loading");
+              if (res.code !== 0) {
+                layer.alert("截取失败：" + res.msg, { title: false });
+                return;
+              }
+              $("#cut-result").html(
+                '截取成功：<a href="' +
+                  res.url +
+                  '" target="_blank">' +
+                  res.file_name +
+                  "</a>"
+              );
+              loadHistory();
+            }
+          ).fail(function () {
+            layer.closeAll("loading");
+            layer.alert("请求失败，请检查网络或后端服务", { title: false });
+          });
+        });
+
+        function loadHistory() {
+          $.get("/cut_history", function (res) {
+            if (res.code !== 0) {
+              return;
+            }
+            var tbody = $("#history-table tbody");
+            tbody.empty();
+            if (!res.data || !res.data.length) {
+              tbody.append(
+                "<tr><td colspan='3'>暂无记录</td></tr>"
+              );
+              return;
+            }
+            res.data.forEach(function (item) {
+              var sizeKB = (item.size / 1024).toFixed(1);
+              var tr =
+                "<tr>" +
+                "<td>" +
+                item.file_name +
+                "</td>" +
+                "<td>" +
+                sizeKB +
+                "</td>" +
+                '<td><a href="' +
+                item.url +
+                '" target="_blank">下载</a></td>' +
+                "</tr>";
+              tbody.append(tr);
+            });
+          });
+        }
+
+        // 页面加载时拉一次历史记录
+        loadHistory();
+      });
+    </script>
+  </body>
+</html>
+
+

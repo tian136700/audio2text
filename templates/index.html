@@ -248,6 +248,22 @@
               </select>
             </div>
           </div>
+
+          <!-- 说话人识别 -->
+          <div class="layui-form-item">
+            <label
+              class="layui-form-label"
+              
+              data-cn="说话人识别"
+              data-en="Speaker Recognition"
+            ></label>
+            <div class="">
+              <select id="enable_speaker" name="enable_speaker">
+                <option value="off" data-cn="关闭" data-en="OFF"></option>
+                <option value="on" data-cn="开启" data-en="ON"></option>
+              </select>
+            </div>
+          </div>
 	</div>
           <div
             class="layui-label-text layui-font-12 my-1 "
@@ -580,7 +596,8 @@
           var field = {
             model: $("select[name='model']").val(),
             language: $("select[name='language']").val(),
-            data_type: $("#data_type").val()
+            data_type: $("#data_type").val(),
+            enable_speaker: $("#enable_speaker").val()
           };
           
           if(field['model'].endsWith('.en') && field['language']!='en'){
@@ -618,7 +635,8 @@
               wav_name: testFile.data,
               model: field.model,
               language: field.language,
-              data_type: field.data_type
+              data_type: field.data_type,
+              enable_speaker: field.enable_speaker
             },
             success: function (res) {
               processing = false;
@@ -632,6 +650,16 @@
                   { title: false }
                 );
                 return;
+              }
+              
+              // 检查是否启用了说话人识别但没有结果
+              if (field.enable_speaker === 'on' && res.result && !res.result.includes('说话人')) {
+                layer.msg(
+                  language === "zh"
+                    ? "提示：已开启说话人识别，但未检测到说话人信息。请确保已安装 pyannote.audio (pip install pyannote.audio)"
+                    : "Note: Speaker recognition is enabled but no speaker info detected. Please ensure pyannote.audio is installed.",
+                  { time: 5000 }
+                );
               }
               
               // 显示测试结果
