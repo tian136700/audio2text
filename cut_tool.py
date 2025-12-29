@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Tuple, List, Dict
 
 from stslib import cfg, tool
@@ -89,16 +90,24 @@ def list_cut_history(limit: int = 50) -> List[Dict]:
         if not os.path.isfile(path):
             continue
         stat = os.stat(path)
+        mtime = stat.st_mtime
         items.append(
             {
                 "file_name": name,
                 "url": f"/static/cut/{name}",
                 "size": stat.st_size,
-                "mtime": stat.st_mtime,
+                "mtime": mtime,
+                "mtime_str": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime)),
             }
         )
 
+    # 按操作时间降序排序（最新的在前）
     items.sort(key=lambda x: x["mtime"], reverse=True)
+    
+    # 添加ID字段（从1开始，按时间倒序）
+    for idx, item in enumerate(items[:limit], start=1):
+        item["id"] = idx
+    
     return items[:limit]
 
 

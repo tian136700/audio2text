@@ -31,6 +31,25 @@
       .time-inputs {
         margin-top: 20px;
       }
+      .time-group {
+        display: flex;
+        align-items: center;
+      }
+      .time-group input {
+        width: 70px;
+        text-align: center;
+      }
+      .time-separator {
+        padding: 0 5px;
+      }
+      .time-help {
+        color: #999;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .layui-form-item {
+        margin-bottom: 20px;
+      }
       .history-table {
         margin-top: 20px;
       }
@@ -56,31 +75,73 @@
         <div class="layui-form layui-form-pane">
           <div class="layui-form-item">
             <label class="layui-form-label">开始时间</label>
-            <div class="layui-input-inline">
+            <div class="layui-input-inline time-group">
               <input
                 type="text"
-                id="start-time"
-                placeholder="00:00:00"
+                id="start-h"
+                value="00"
+                maxlength="2"
                 class="layui-input"
               />
+              <span class="time-separator">时</span>
+              <input
+                type="text"
+                id="start-m"
+                value="00"
+                maxlength="2"
+                class="layui-input"
+              />
+              <span class="time-separator">分</span>
+              <input
+                type="text"
+                id="start-s"
+                value="00"
+                maxlength="2"
+                class="layui-input"
+              />
+              <span class="time-separator">秒</span>
             </div>
-            <div class="layui-form-mid layui-word-aux">
-              格式：时:分:秒，例如 00:01:30
+          </div>
+
+          <div class="layui-form-item">
+            <div class="layui-input-block">
+              <span class="time-help">为空时自动按 00 处理，例如 00时01分30秒</span>
             </div>
           </div>
 
           <div class="layui-form-item">
             <label class="layui-form-label">结束时间</label>
-            <div class="layui-input-inline">
+            <div class="layui-input-inline time-group">
               <input
                 type="text"
-                id="end-time"
-                placeholder="00:05:00"
+                id="end-h"
+                value="00"
+                maxlength="2"
                 class="layui-input"
               />
+              <span class="time-separator">时</span>
+              <input
+                type="text"
+                id="end-m"
+                value="00"
+                maxlength="2"
+                class="layui-input"
+              />
+              <span class="time-separator">分</span>
+              <input
+                type="text"
+                id="end-s"
+                value="00"
+                maxlength="2"
+                class="layui-input"
+              />
+              <span class="time-separator">秒</span>
             </div>
-            <div class="layui-form-mid layui-word-aux">
-              必须大于开始时间
+          </div>
+
+          <div class="layui-form-item">
+            <div class="layui-input-block">
+              <span class="time-help">必须大于开始时间</span>
             </div>
           </div>
 
@@ -105,8 +166,10 @@
         <table class="layui-table" id="history-table">
           <thead>
             <tr>
+              <th>ID</th>
               <th>文件名</th>
               <th>大小 (KB)</th>
+              <th>操作时间</th>
               <th>下载</th>
             </tr>
           </thead>
@@ -155,18 +218,33 @@
           },
         });
 
+        function buildTime(h, m, s) {
+          function pad(v) {
+            v = (v || "").trim();
+            if (!v) return "00";
+            if (!/^\d+$/.test(v)) return "00";
+            if (v.length === 1) return "0" + v;
+            return v.slice(-2);
+          }
+          return pad(h) + ":" + pad(m) + ":" + pad(s);
+        }
+
         // 截取按钮
         $("#cut-btn").click(function () {
           if (!currentWav) {
             layer.alert("请先上传要截取的音频文件！", { title: false });
             return;
           }
-          var startTime = $("#start-time").val().trim();
-          var endTime = $("#end-time").val().trim();
-          if (!startTime || !endTime) {
-            layer.alert("开始时间和结束时间不能为空！", { title: false });
-            return;
-          }
+          var startTime = buildTime(
+            $("#start-h").val(),
+            $("#start-m").val(),
+            $("#start-s").val()
+          );
+          var endTime = buildTime(
+            $("#end-h").val(),
+            $("#end-m").val(),
+            $("#end-s").val()
+          );
 
           layer.load();
           $.post(
@@ -183,11 +261,7 @@
                 return;
               }
               $("#cut-result").html(
-                '截取成功：<a href="' +
-                  res.url +
-                  '" target="_blank">' +
-                  res.file_name +
-                  "</a>"
+                `截取成功：${res.file_name}&nbsp;&nbsp;<button type="button" class="layui-btn layui-btn-sm" onclick="window.open('${res.url}', '_blank')">下载</button>`
               );
               loadHistory();
             }
@@ -205,25 +279,20 @@
             var tbody = $("#history-table tbody");
             tbody.empty();
             if (!res.data || !res.data.length) {
-              tbody.append(
-                "<tr><td colspan='3'>暂无记录</td></tr>"
-              );
+              tbody.append("<tr><td colspan='5'>暂无记录</td></tr>");
               return;
             }
-            res.data.forEach(function (item) {
+            res.data.forEach(function (item, index) {
               var sizeKB = (item.size / 1024).toFixed(1);
-              var tr =
-                "<tr>" +
-                "<td>" +
-                item.file_name +
-                "</td>" +
-                "<td>" +
-                sizeKB +
-                "</td>" +
-                '<td><a href="' +
-                item.url +
-                '" target="_blank">下载</a></td>' +
-                "</tr>";
+              var tr = `
+                <tr>
+                  <td>${item.id || (index + 1)}</td>
+                  <td>${item.file_name}</td>
+                  <td>${sizeKB}</td>
+                  <td>${item.mtime_str || ""}</td>
+                  <td><button type="button" class="layui-btn layui-btn-sm" onclick="window.open('${item.url}', '_blank')">下载</button></td>
+                </tr>
+              `;
               tbody.append(tr);
             });
           });
