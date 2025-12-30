@@ -72,7 +72,42 @@
         width: 95%;
         min-width: 800px;
         max-width: 2000px;
-        margin: 75px auto 50px;
+        margin: 20px auto 50px;
+      }
+      .layui-side {
+        width: 200px;
+        top: 60px;
+        transition: margin-left 0.3s;
+      }
+      .layui-side.hide {
+        margin-left: -200px;
+      }
+      .layui-body {
+        top: 60px;
+        padding: 15px;
+        transition: left 0.3s;
+      }
+      .layui-body.sidebar-hidden {
+        left: 0 !important;
+      }
+      .sidebar-toggle {
+        position: fixed;
+        left: 200px;
+        top: 60px;
+        z-index: 1000;
+        background: #393D49;
+        color: #fff;
+        border: none;
+        padding: 10px 5px;
+        cursor: pointer;
+        border-radius: 0 4px 4px 0;
+        transition: left 0.3s;
+      }
+      .sidebar-toggle:hover {
+        background: #2F3437;
+      }
+      .sidebar-toggle.sidebar-hidden {
+        left: 0;
       }
 
       .worktype {
@@ -151,7 +186,30 @@
           </li>
         </ul>
       </div>
-      <div id="content">
+      <!-- 侧边栏 -->
+      <div class="layui-side layui-bg-black" id="sidebar">
+        <div class="layui-side-scroll">
+          <ul class="layui-nav layui-nav-tree" lay-filter="nav">
+            <li class="layui-nav-item layui-nav-itemed">
+              <a href="/" data-cn="语音识别" data-en="Speech Recognition">
+                <i class="layui-icon layui-icon-mic"></i> <span class="menu-text"></span>
+              </a>
+            </li>
+            <li class="layui-nav-item">
+              <a href="/cut" data-cn="音频截取" data-en="Audio Cut">
+                <i class="layui-icon layui-icon-cut"></i> <span class="menu-text"></span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <!-- 隐藏/显示侧边栏按钮 -->
+      <button class="sidebar-toggle" id="sidebar-toggle" title="隐藏/显示菜单">
+        <i class="layui-icon layui-icon-shrink-right"></i>
+      </button>
+      <!-- 内容主体区域 -->
+      <div class="layui-body">
+        <div id="content">
         <!-- 内容主体区域 -->
         <div class="layui-upload-drag layui-border-green" id="upload">
           <i class="layui-icon layui-icon-upload layui-font-green"></i>
@@ -354,7 +412,16 @@
       let intervalId = null;
       // 强制显示中文
       $("[data-cn]").each(function () {
-        $(this).html($(this).html() + $(this).attr("data-cn"));
+        var $this = $(this);
+        var text = $this.attr("data-cn");
+        // 如果是菜单项，填充到 .menu-text 中
+        var $menuText = $this.find(".menu-text");
+        if ($menuText.length) {
+          $menuText.text(text);
+        } else {
+          // 其他元素，追加文字
+          $this.html($this.html() + text);
+        }
       });
       $("[placeholder-cn]").each(function () {
         $(this).attr("placeholder", $(this).attr("placeholder-cn"));
@@ -468,6 +535,23 @@
       layui.use(function () {
         var element = layui.element;
         var layer = layui.layer;
+        
+        // 侧边栏隐藏/显示功能
+        var sidebarHidden = false;
+        $("#sidebar-toggle").click(function() {
+          sidebarHidden = !sidebarHidden;
+          if (sidebarHidden) {
+            $("#sidebar").addClass("hide");
+            $(".layui-body").addClass("sidebar-hidden");
+            $(this).addClass("sidebar-hidden");
+            $(this).find("i").removeClass("layui-icon-shrink-right").addClass("layui-icon-spread-left");
+          } else {
+            $("#sidebar").removeClass("hide");
+            $(".layui-body").removeClass("sidebar-hidden");
+            $(this).removeClass("sidebar-hidden");
+            $(this).find("i").removeClass("layui-icon-spread-left").addClass("layui-icon-shrink-right");
+          }
+        });
 
         var upload = layui.upload;
         let form = layui.form;
@@ -808,5 +892,8 @@
 	
 	
     </script>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
