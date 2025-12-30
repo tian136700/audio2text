@@ -168,7 +168,9 @@
             <tr>
               <th>ID</th>
               <th>文件名</th>
-              <th>大小 (KB)</th>
+              <th>截取时间段</th>
+              <th>截取时长</th>
+              <th>大小 (MB)</th>
               <th>操作时间</th>
               <th>下载</th>
             </tr>
@@ -279,16 +281,17 @@
             var tbody = $("#history-table tbody");
             tbody.empty();
             if (!res.data || !res.data.length) {
-              tbody.append("<tr><td colspan='5'>暂无记录</td></tr>");
+              tbody.append("<tr><td colspan='7'>暂无记录</td></tr>");
               return;
             }
             res.data.forEach(function (item, index) {
-              var sizeKB = (item.size / 1024).toFixed(1);
               var tr = `
                 <tr>
                   <td>${item.id || (index + 1)}</td>
                   <td>${item.file_name}</td>
-                  <td>${sizeKB}</td>
+                  <td>${item.time_range || "00:00:00-00:00:00"}</td>
+                  <td>${item.duration || "00:00:00"}</td>
+                  <td>${item.size_mb !== undefined ? item.size_mb.toFixed(2) : ((item.size / (1024 * 1024)).toFixed(2))}</td>
                   <td>${item.mtime_str || ""}</td>
                   <td><button type="button" class="layui-btn layui-btn-sm" onclick="window.open('${item.url}', '_blank')">下载</button></td>
                 </tr>

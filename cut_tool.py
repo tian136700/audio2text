@@ -76,6 +76,16 @@ def cut_audio_segment(src_wav: str, start_time: str, end_time: str) -> Tuple[str
     return out_path, url
 
 
+def _seconds_to_time_str(seconds: int) -> str:
+    """
+    将秒数转换为 00:00:00 格式
+    """
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 def list_cut_history(limit: int = 50) -> List[Dict]:
     """
     获取历史截取记录（按时间倒序）
@@ -91,13 +101,39 @@ def list_cut_history(limit: int = 50) -> List[Dict]:
             continue
         stat = os.stat(path)
         mtime = stat.st_mtime
+        
+        # 从文件名解析开始和结束时间
+        # 文件名格式：base_000300_000600.wav
+        base_name, ext = os.path.splitext(name)
+        parts = base_name.rsplit('_', 2)
+        
+        start_time_str = "00:00:00"
+        end_time_str = "00:00:00"
+        duration_str = "00:00:00"
+        
+        if len(parts) >= 3:
+            try:
+                start_sec = int(parts[-2])
+                end_sec = int(parts[-1])
+                start_time_str = _seconds_to_time_str(start_sec)
+                end_time_str = _seconds_to_time_str(end_sec)
+                duration_sec = end_sec - start_sec
+                duration_str = _seconds_to_time_str(duration_sec)
+            except (ValueError, IndexError):
+                pass
+        
         items.append(
             {
                 "file_name": name,
                 "url": f"/static/cut/{name}",
                 "size": stat.st_size,
+                "size_mb": round(stat.st_size / (1024 * 1024), 2),  # 转换为 MB
                 "mtime": mtime,
                 "mtime_str": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime)),
+                "start_time": start_time_str,
+                "end_time": end_time_str,
+                "time_range": f"{start_time_str}-{end_time_str}",
+                "duration": duration_str,
             }
         )
 
