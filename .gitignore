@@ -79,6 +79,10 @@ desktop.ini
 .env.local
 *.ini.bak
 
+# 配置文件（可能包含敏感信息，如 token）
+set.ini
+test_diarization.py
+
 # FFmpeg 可执行文件
 ffmpeg
 ffmpeg.exe
@@ -86,6 +90,6 @@ ffprobe
 ffprobe.exe
 
 # 注意：以下文件应该提交到 git
-# - set.ini (配置文件模板)
+# - set.ini.example (配置文件模板，不包含真实 token)
 # - test.py (API 使用示例)
 # - testcuda.py (CUDA 测试文件)
