@@ -34,6 +34,7 @@ from gevent.pywsgi import WSGIServer, WSGIHandler, LoggingLogAdapter
 from logging.handlers import RotatingFileHandler
 import warnings
 warnings.filterwarnings('ignore')
+from dotenv import load_dotenv
 import stslib
 from stslib import cfg, tool
 from stslib.cfg import ROOT_DIR
@@ -41,6 +42,9 @@ from faster_whisper import WhisperModel
 import time
 from werkzeug.utils import secure_filename
 import uuid
+
+# 加载 .env 文件
+load_dotenv()
 import cut_tool
 
 # 说话人识别相关
@@ -64,12 +68,13 @@ def get_diarization_pipeline(device='cpu'):
         try:
             from huggingface_hub import login
 
-            # 读取 token（可写入 ~/.stt/set.ini）
-            sets = cfg.parse_ini()
-            hf_token = sets.get("hf_token") or os.environ.get("HF_TOKEN")
+            # 从 .env 文件读取 token（优先级：.env > 环境变量）
+            hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
 
             if hf_token:
                 login(hf_token)  # 登录一次即可，以后不用再传 token
+            else:
+                print("警告：未找到 Hugging Face Token，说话人识别可能失败。请在 .env 文件中设置 HF_TOKEN")
 
             # ⚠ 新版正确使用方式——不再传 token！
             DIARIZATION_PIPELINE = Pipeline.from_pretrained(
