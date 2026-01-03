@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>转MP3格式</title>
+    <meta name="renderer" content="webkit" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="/static/layui/css/layui.css" rel="stylesheet" />
+    <style>
+      #content {
+        width: 95%;
+        min-width: 800px;
+        max-width: 2000px;
+        margin: 40px auto 50px;
+      }
+      .layui-header {
+        background: #16b777;
+      }
+      .section-title {
+        font-size: 18px;
+        margin: 15px 0;
+      }
+      #upload {
+        display: block;
+        margin-bottom: 10px;
+        border-style: solid;
+        padding: 30px 20px;
+      }
+      .file-info {
+        margin-top: 10px;
+        color: #333;
+      }
+      .layui-form-item {
+        margin-bottom: 20px;
+      }
+      .history-table {
+        margin-top: 20px;
+      }
+      .layui-side {
+        width: 200px;
+        top: 60px;
+        transition: margin-left 0.3s;
+      }
+      .layui-side.hide {
+        margin-left: -200px;
+      }
+      .layui-body {
+        top: 60px;
+        padding: 15px;
+        transition: left 0.3s;
+      }
+      .layui-body.sidebar-hidden {
+        left: 0 !important;
+      }
+      .sidebar-toggle {
+        position: fixed;
+        left: 200px;
+        top: 60px;
+        z-index: 1000;
+        background: #393D49;
+        color: #fff;
+        border: none;
+        padding: 10px 5px;
+        cursor: pointer;
+        border-radius: 0 4px 4px 0;
+        transition: left 0.3s;
+      }
+      .sidebar-toggle:hover {
+        background: #2F3437;
+      }
+      .sidebar-toggle.sidebar-hidden {
+        left: 0;
+      }
+      .progress-container {
+        margin-top: 20px;
+        display: none;
+      }
+      .progress-container.active {
+        display: block;
+      }
+      .convert-result {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f0f9ff;
+        border: 1px solid #b3d8ff;
+        border-radius: 4px;
+        display: none;
+      }
+      .convert-result.active {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layui-layout layui-layout-admin">
+      <div class="layui-header" style="background: #16b777;z-index:1">
+        <div class="layui-logo layui-hide-xs" style="color: #fff">转MP3格式</div>
+      </div>
+      <!-- 侧边栏 -->
+      <div class="layui-side layui-bg-black" id="sidebar">
+        <div class="layui-side-scroll">
+          <ul class="layui-nav layui-nav-tree" lay-filter="nav">
+            <li class="layui-nav-item">
+              <a href="/" data-cn="语音识别" data-en="Speech Recognition">
+                <i class="layui-icon layui-icon-mic"></i> <span class="menu-text"></span>
+              </a>
+            </li>
+            <li class="layui-nav-item">
+              <a href="/cut" data-cn="音频截取" data-en="Audio Cut">
+                <i class="layui-icon layui-icon-cut"></i> <span class="menu-text"></span>
+              </a>
+            </li>
+            <li class="layui-nav-item layui-nav-itemed">
+              <a href="/convert_mp3" data-cn="转MP3格式" data-en="Convert to MP3">
+                <i class="layui-icon layui-icon-play"></i> <span class="menu-text"></span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <!-- 隐藏/显示侧边栏按钮 -->
+      <button class="sidebar-toggle" id="sidebar-toggle" title="隐藏/显示菜单">
+        <i class="layui-icon layui-icon-shrink-right"></i>
+      </button>
+      <!-- 内容主体区域 -->
+      <div class="layui-body">
+        <div id="content">
+          <h2>音频转MP3格式工具</h2>
+          <p>步骤：1）上传音频/视频文件 2）点击"转换为MP3" 3）等待转换完成并下载。</p>
+
+          <!-- 上传区域 -->
+          <div class="layui-upload-drag layui-border-green" id="upload">
+            <i class="layui-icon layui-icon-upload layui-font-green"></i>
+            <div>点击上传，或将音频/视频文件拖拽到此处（mp4/wav/m4a/flac/aac 等）</div>
+            <div id="uploaded-info" class="file-info"></div>
+          </div>
+
+          <!-- 预览 -->
+          <div id="audio-preview" class="file-info"></div>
+
+          <!-- 转换按钮 -->
+          <div class="layui-form-item">
+            <button
+              type="button"
+              class="layui-btn layui-btn-normal"
+              id="convert-btn"
+              disabled
+            >
+              转换为MP3
+            </button>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="progress-container" id="progress-container">
+            <div class="layui-progress" lay-showpercent="true" lay-filter="convert-progress">
+              <div class="layui-progress-bar" lay-percent="0%"></div>
+            </div>
+            <div id="progress-message" style="margin-top: 10px; color: #666;"></div>
+          </div>
+
+          <!-- 转换结果 -->
+          <div class="convert-result" id="convert-result"></div>
+
+          <!-- 历史记录 -->
+          <div class="history-table">
+            <div class="section-title">历史转换记录</div>
+            <table class="layui-table" id="history-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>文件名</th>
+                  <th>原始文件名</th>
+                  <th>大小 (MB)</th>
+                  <th>操作时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/layui/layui.js"></script>
+    <script>
+      let language = "zh"; // 强制使用中文
+      window.$ = layui.$;
+      
+      // 强制显示中文
+      $("[data-cn]").each(function () {
+        var $this = $(this);
+        var text = $this.attr("data-cn");
+        // 如果是菜单项，填充到 .menu-text 中
+        var $menuText = $this.find(".menu-text");
+        if ($menuText.length) {
+          $menuText.text(text);
+        } else {
+          // 其他元素，追加文字
+          $this.html($this.html() + text);
+        }
+      });
+      
+      layui.use(["upload", "layer", "element"], function () {
+        var upload = layui.upload;
+        var layer = layui.layer;
+        var $ = layui.$;
+        var element = layui.element;
+        
+        // 渲染进度条组件
+        element.render('progress');
+        
+        // 侧边栏隐藏/显示功能
+        var sidebarHidden = false;
+        $("#sidebar-toggle").click(function() {
+          sidebarHidden = !sidebarHidden;
+          if (sidebarHidden) {
+            $("#sidebar").addClass("hide");
+            $(".layui-body").addClass("sidebar-hidden");
+            $(this).addClass("sidebar-hidden");
+            $(this).find("i").removeClass("layui-icon-shrink-right").addClass("layui-icon-spread-left");
+          } else {
+            $("#sidebar").removeClass("hide");
+            $(".layui-body").removeClass("sidebar-hidden");
+            $(this).removeClass("sidebar-hidden");
+            $(this).find("i").removeClass("layui-icon-spread-left").addClass("layui-icon-shrink-right");
+          }
+        });
+
+        var currentFile = null; // 当前上传的文件名
+        var currentTaskId = null; // 当前转换任务ID
+        var progressInterval = null; // 进度查询定时器
+
+        // 上传
+        upload.render({
+          elem: "#upload",
+          field: "audio",
+          accept: "file",
+          exts: "mp4|mp3|flac|wav|aac|m4a|avi|mkv|mpeg|mov|wma|ogg",
+          multiple: false,
+          url: "/upload",
+          before: function () {
+            currentFile = null;
+            currentTaskId = null;
+            $("#uploaded-info").text("正在上传文件，请稍候...");
+            $("#audio-preview").html("");
+            $("#convert-btn").prop("disabled", true);
+            $("#progress-container").removeClass("active");
+            $("#convert-result").removeClass("active");
+            if (progressInterval) {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }
+          },
+          done: function (res) {
+            if (res.code !== 0) {
+              layer.alert("上传失败：" + res.msg, { title: false });
+              return;
+            }
+            currentFile = res.data;
+            $("#uploaded-info").text("上传成功: " + currentFile);
+            $("#audio-preview").html(
+              '<audio src="/static/tmp/' +
+                currentFile +
+                '" controls style="width: 100%;"></audio>'
+            );
+            $("#convert-btn").prop("disabled", false);
+          },
+          error: function () {
+            layer.alert("上传失败，请重试", { title: false });
+          },
+        });
+
+        // 转换按钮
+        $("#convert-btn").click(function () {
+          if (!currentFile) {
+            layer.alert("请先上传要转换的音频文件！", { title: false });
+            return;
+          }
+
+          // 生成任务ID
+          currentTaskId = "convert_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
+
+          // 显示进度条
+          $("#progress-container").addClass("active");
+          $("#convert-result").removeClass("active");
+          $("#convert-btn").prop("disabled", true);
+          
+          // 初始化进度条
+          element.progress("convert-progress", "0%");
+          $("#progress-message").text("准备开始转换...");
+
+          // 发送转换请求
+          $.post(
+            "/convert_audio",
+            {
+              file_name: currentFile,
+              task_id: currentTaskId,
+            },
+            function (res) {
+              if (res.code !== 0) {
+                layer.alert("转换失败：" + res.msg, { title: false });
+                $("#progress-container").removeClass("active");
+                $("#convert-btn").prop("disabled", false);
+                return;
+              }
+              // 开始轮询进度
+              startProgressPolling(currentTaskId);
+            }
+          ).fail(function () {
+            layer.alert("请求失败，请检查网络或后端服务", { title: false });
+            $("#progress-container").removeClass("active");
+            $("#convert-btn").prop("disabled", false);
+          });
+        });
+
+        // 开始轮询进度
+        function startProgressPolling(taskId) {
+          if (progressInterval) {
+            clearInterval(progressInterval);
+          }
+          
+          progressInterval = setInterval(function() {
+            $.get("/convert_progress?task_id=" + taskId, function(res) {
+              if (res.code !== 0) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+                return;
+              }
+
+              var progress = res.data.progress || 0;
+              var status = res.data.status || "unknown";
+              var message = res.data.message || "";
+
+              // 更新进度条
+              element.progress("convert-progress", progress + "%");
+              $("#progress-message").text(message);
+
+              // 如果完成或出错，停止轮询
+              if (status === "completed") {
+                clearInterval(progressInterval);
+                progressInterval = null;
+                $("#progress-message").text("转换完成！");
+                $("#convert-btn").prop("disabled", false);
+                
+                // 显示转换结果
+                showConvertResult(taskId);
+                // 刷新历史记录
+                loadHistory();
+              } else if (status === "error") {
+                clearInterval(progressInterval);
+                progressInterval = null;
+                layer.alert("转换失败：" + message, { title: false });
+                $("#convert-btn").prop("disabled", false);
+              }
+            }).fail(function() {
+              clearInterval(progressInterval);
+              progressInterval = null;
+            });
+          }, 500); // 每500ms查询一次进度
+        }
+
+        // 显示转换结果
+        function showConvertResult(taskId) {
+          // 从历史记录中获取最新的转换结果
+          $.get("/convert_history?limit=1", function(res) {
+            if (res.code === 0 && res.data && res.data.length > 0) {
+              var item = res.data[0];
+              // 创建播放和下载按钮
+              var playBtn = `<button type="button" class="layui-btn layui-btn-sm layui-btn-normal" onclick="window.open('${item.url}', '_blank')"><i class="layui-icon layui-icon-play"></i> 播放</button>`;
+              var downloadBtn = `<a href="${item.url}" download="${item.file_name}" class="layui-btn layui-btn-sm"><i class="layui-icon layui-icon-download-circle"></i> 下载</a>`;
+              $("#convert-result").html(
+                `转换成功：${item.file_name}&nbsp;&nbsp;${playBtn}&nbsp;&nbsp;${downloadBtn}`
+              );
+              $("#convert-result").addClass("active");
+            }
+          });
+        }
+
+        // 加载历史记录
+        function loadHistory() {
+          $.get("/convert_history", function (res) {
+            if (res.code !== 0) {
+              return;
+            }
+            var tbody = $("#history-table tbody");
+            tbody.empty();
+            if (!res.data || !res.data.length) {
+              tbody.append("<tr><td colspan='6'>暂无记录</td></tr>");
+              return;
+            }
+            res.data.forEach(function (item, index) {
+              // 创建播放和下载按钮
+              var playBtn = `<button type="button" class="layui-btn layui-btn-xs layui-btn-normal" onclick="window.open('${item.url}', '_blank')"><i class="layui-icon layui-icon-play"></i> 播放</button>`;
+              var downloadBtn = `<a href="${item.url}" download="${item.file_name}" class="layui-btn layui-btn-xs"><i class="layui-icon layui-icon-download-circle"></i> 下载</a>`;
+              var tr = `
+                <tr>
+                  <td>${item.id || (index + 1)}</td>
+                  <td>${item.file_name}</td>
+                  <td>${item.original_name || "-"}</td>
+                  <td>${item.size_mb !== undefined ? item.size_mb.toFixed(2) : ((item.size / (1024 * 1024)).toFixed(2))}</td>
+                  <td>${item.mtime_str || ""}</td>
+                  <td>${playBtn}&nbsp;&nbsp;${downloadBtn}</td>
+                </tr>
+              `;
+              tbody.append(tr);
+            });
+          });
+        }
+
+        // 页面加载时拉一次历史记录
+        loadHistory();
+      });
+    </script>
+  </body>
+</html>
+
