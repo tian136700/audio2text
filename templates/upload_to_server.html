@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>上传到服务器</title>
+    <meta name="renderer" content="webkit" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="/static/layui/css/layui.css" rel="stylesheet" />
+    <style>
+      #content {
+        width: 95%;
+        min-width: 800px;
+        max-width: 2000px;
+        margin: 40px auto 50px;
+      }
+      .layui-header {
+        background: #16b777;
+      }
+      .section-title {
+        font-size: 18px;
+        margin: 15px 0;
+        font-weight: bold;
+      }
+      #upload {
+        display: block;
+        margin-bottom: 10px;
+        border-style: solid;
+        padding: 30px 20px;
+      }
+      .file-info {
+        margin-top: 10px;
+        color: #333;
+      }
+      .layui-form-item {
+        margin-bottom: 20px;
+      }
+      .history-table {
+        margin-top: 20px;
+      }
+      .layui-side {
+        width: 200px;
+        top: 60px;
+        transition: margin-left 0.3s;
+      }
+      .layui-side.hide {
+        margin-left: -200px;
+      }
+      .layui-body {
+        top: 60px;
+        padding: 15px;
+        transition: left 0.3s;
+      }
+      .layui-body.sidebar-hidden {
+        left: 0 !important;
+      }
+      .sidebar-toggle {
+        position: fixed;
+        left: 200px;
+        top: 60px;
+        z-index: 1000;
+        background: #393D49;
+        color: #fff;
+        border: none;
+        padding: 10px 5px;
+        cursor: pointer;
+        border-radius: 0 4px 4px 0;
+        transition: left 0.3s;
+      }
+      .sidebar-toggle:hover {
+        background: #2F3437;
+      }
+      .sidebar-toggle.sidebar-hidden {
+        left: 0;
+      }
+      .progress-container {
+        margin-top: 20px;
+        display: none;
+      }
+      .progress-container.active {
+        display: block;
+      }
+      .upload-result {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f0f9ff;
+        border: 1px solid #b3d8ff;
+        border-radius: 4px;
+        display: none;
+      }
+      .upload-result.active {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layui-layout layui-layout-admin">
+      <div class="layui-header" style="background: #16b777;z-index:1">
+        <div class="layui-logo layui-hide-xs" style="color: #fff">上传到服务器</div>
+      </div>
+      {% include 'includes/sidebar.html' %}
+      <!-- 内容主体区域 -->
+      <div class="layui-body">
+        <div id="content">
+          <h2>上传语音文件到服务器</h2>
+          <p>步骤：1）选择或拖拽音频/视频文件 2）自动上传到服务器 3）查看历史记录和下载链接。</p>
+
+          <!-- 上传区域 -->
+          <div class="layui-upload-drag layui-border-green" id="upload">
+            <i class="layui-icon layui-icon-upload layui-font-green"></i>
+            <div>点击上传，或将音频/视频文件拖拽到此处（mp4/wav/m4a/flac/aac/mp3 等）</div>
+            <div id="uploaded-info" class="file-info"></div>
+          </div>
+
+          <!-- 上传进度条 -->
+          <div class="progress-container" id="progress-container">
+            <div class="layui-progress" lay-showpercent="true" lay-filter="upload-progress">
+              <div class="layui-progress-bar" lay-percent="0%"></div>
+            </div>
+            <div id="progress-text" style="margin-top: 10px; color: #666;"></div>
+          </div>
+
+          <!-- 上传结果 -->
+          <div class="upload-result" id="upload-result">
+            <div id="result-content"></div>
+          </div>
+
+          <!-- 历史记录 -->
+          <div class="history-table">
+            <div class="section-title">
+              上传历史记录
+              <span id="history-load-time" style="font-size: 12px; color: #999; margin-left: 10px; display: none;"></span>
+            </div>
+            <table class="layui-table" id="history-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>文件名</th>
+                  <th>上传时间</th>
+                  <th>文件大小</th>
+                  <th>文件时长</th>
+                  <th>下载链接</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <!-- 删除进度条 -->
+            <div class="progress-container" id="delete-progress-container" style="margin-top: 10px; display: none;">
+              <div class="layui-progress" lay-showpercent="true" lay-filter="delete-progress">
+                <div class="layui-progress-bar" lay-percent="0%"></div>
+              </div>
+              <div id="delete-progress-text" style="margin-top: 6px; color: #666;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/layui/layui.js"></script>
+    <script>
+      window.$ = layui.$;
+      
+      // 强制显示中文
+      $("[data-cn]").each(function () {
+        var $this = $(this);
+        var text = $this.attr("data-cn");
+        // 如果是菜单项，填充到 .menu-text 中
+        var $menuText = $this.find(".menu-text");
+        if ($menuText.length) {
+          $menuText.text(text);
+        } else {
+          // 其他元素，追加文字
+          $this.html($this.html() + text);
+        }
+      });
+      
+      layui.use(["upload", "layer", "element"], function () {
+        var upload = layui.upload;
+        var layer = layui.layer;
+        var element = layui.element;
+        var $ = layui.$;
+        
+        // 渲染进度条
+        element.render('progress');
+        
+        // 侧边栏隐藏/显示功能
+        var sidebarHidden = false;
+        $("#sidebar-toggle").click(function() {
+          sidebarHidden = !sidebarHidden;
+          if (sidebarHidden) {
+            $("#sidebar").addClass("hide");
+            $(".layui-body").addClass("sidebar-hidden");
+            $(this).addClass("sidebar-hidden");
+            $(this).find("i").removeClass("layui-icon-shrink-right").addClass("layui-icon-spread-left");
+          } else {
+            $("#sidebar").removeClass("hide");
+            $(".layui-body").removeClass("sidebar-hidden");
+            $(this).removeClass("sidebar-hidden");
+            $(this).find("i").removeClass("layui-icon-spread-left").addClass("layui-icon-shrink-right");
+          }
+        });
+
+        // 文件上传（使用 XMLHttpRequest 实现进度条）
+        var uploadBtn = $("#upload");
+        uploadBtn.on("click", function() {
+          var input = $('<input type="file" accept=".mp4,.mp3,.flac,.wav,.aac,.m4a,.avi,.mkv,.mpeg,.mov" style="display:none;">');
+          $("body").append(input);
+          input.click();
+          
+          input.on("change", function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            
+            // 验证文件类型
+            var ext = file.name.split('.').pop().toLowerCase();
+            var allowedExts = ['mp4', 'mp3', 'flac', 'wav', 'aac', 'm4a', 'avi', 'mkv', 'mpeg', 'mov'];
+            if (allowedExts.indexOf(ext) === -1) {
+              layer.alert("不支持的文件格式", { title: false });
+              input.remove();
+              return;
+            }
+            
+            // 准备上传
+            $("#uploaded-info").text("准备上传: " + file.name);
+            $("#progress-container").addClass("active");
+            $("#upload-result").removeClass("active");
+            element.progress("upload-progress", "0%");
+            $("#progress-text").text("0% - 开始上传...");
+            
+            // 使用 FormData 和 XMLHttpRequest 上传
+            var formData = new FormData();
+            formData.append("file", file);
+            
+            var xhr = new XMLHttpRequest();
+            
+            // 上传进度
+            xhr.upload.addEventListener("progress", function(e) {
+              if (e.lengthComputable) {
+                var percent = Math.round((e.loaded / e.total) * 100);
+                element.progress("upload-progress", percent + "%");
+                if (percent >= 100) {
+                  // 文件上传完成，但服务器可能还在处理
+                  $("#progress-text").text("100% - 上传完成，正在处理...");
+                } else {
+                  $("#progress-text").text(percent + "% - 正在上传... (" + formatFileSize(e.loaded) + " / " + formatFileSize(e.total) + ")");
+                }
+              }
+            }, false);
+            
+            // 上传完成
+            xhr.addEventListener("load", function() {
+              if (xhr.status === 200) {
+                try {
+                  var res = JSON.parse(xhr.responseText);
+                  if (res.code !== 0) {
+                    layer.alert("上传失败：" + res.msg, { title: false });
+                    $("#progress-container").removeClass("active");
+                    return;
+                  }
+                  
+                  // 上传成功
+                  element.progress("upload-progress", "100%");
+                  $("#progress-text").text("100% - 处理完成！");
+                  
+                  // 显示结果
+                  var record = res.data;
+                  $("#result-content").html(`
+                    <h3 style="color: #5FB878;">✅ 上传成功！</h3>
+                    <p><strong>文件名：</strong>${record.file_name}</p>
+                    <p><strong>文件大小：</strong>${record.file_size_mb} MB</p>
+                    <p><strong>文件时长：</strong>${record.file_duration_str}</p>
+                    <p><strong>下载链接：</strong><a href="${record.download_url}" target="_blank">${record.download_url}</a></p>
+                  `);
+                  $("#upload-result").addClass("active");
+                  
+                  // 刷新历史记录
+                  setTimeout(function() {
+                    loadHistory();
+                  }, 500);
+                } catch (e) {
+                  layer.alert("解析响应失败", { title: false });
+                  $("#progress-container").removeClass("active");
+                }
+              } else {
+                layer.alert("上传失败，HTTP状态码: " + xhr.status, { title: false });
+                $("#progress-container").removeClass("active");
+              }
+            }, false);
+            
+            // 上传错误
+            xhr.addEventListener("error", function() {
+              layer.alert("上传失败，请检查网络或服务器配置", { title: false });
+              $("#progress-container").removeClass("active");
+            }, false);
+            
+            // 开始上传
+            xhr.open("POST", "/upload_to_server");
+            xhr.send(formData);
+            
+            input.remove();
+          });
+        });
+        
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+          if (bytes === 0) return "0 B";
+          var k = 1024;
+          var sizes = ["B", "KB", "MB", "GB"];
+          var i = Math.floor(Math.log(bytes) / Math.log(k));
+          return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
+        }
+
+        // 加载历史记录
+        function loadHistory() {
+          // 加载计时器
+          var $timeLabel = $("#history-load-time");
+          var seconds = 0;
+          $timeLabel.text("（加载中 0 秒）").show();
+          var timer = setInterval(function () {
+            seconds += 1;
+            $timeLabel.text("（加载中 " + seconds + " 秒）");
+          }, 1000);
+
+          $.get("/upload_history", function (res) {
+            clearInterval(timer);
+            if (res.code !== 0) {
+              $timeLabel.text("（加载失败，用时 " + seconds + " 秒）");
+              return;
+            }
+            $timeLabel.text("（加载完成，用时 " + seconds + " 秒）");
+            // 若想几秒后隐藏，可解除下一行注释
+            // setTimeout(function(){ $timeLabel.hide(); }, 3000);
+            var tbody = $("#history-table tbody");
+            tbody.empty();
+            if (!res.data || !res.data.length) {
+              tbody.append("<tr><td colspan='7'>暂无记录</td></tr>");
+              return;
+            }
+            res.data.forEach(function (item, index) {
+              var tr = `
+                <tr data-id="${item.id || ''}">
+                  <td>${index + 1}</td>
+                  <td title="${item.original_name || item.file_name}">${item.file_name}</td>
+                  <td>${item.upload_time || ""}</td>
+                  <td>${item.file_size_mb !== undefined ? item.file_size_mb + ' MB' : ((item.file_size / (1024 * 1024)).toFixed(2) + ' MB')}</td>
+                  <td>${item.file_duration_str || formatDuration(item.file_duration || 0)}</td>
+                  <td><a href="${item.download_url}" target="_blank" style="color: #1E9FFF;">${item.download_url}</a></td>
+                  <td>
+                    <button type="button" class="layui-btn layui-btn-sm layui-btn-primary" onclick="copyUrl('${item.download_url}')">复制链接</button>
+                    ${
+                      item.id
+                        ? `<button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteUpload('${item.id}', this)">删除</button>`
+                        : ''
+                    }
+                  </td>
+                </tr>
+              `;
+              tbody.append(tr);
+            });
+          });
+        }
+        
+        // 格式化时长
+        function formatDuration(seconds) {
+          if (!seconds || seconds <= 0) return "00:00:00";
+          var hours = Math.floor(seconds / 3600);
+          var minutes = Math.floor((seconds % 3600) / 60);
+          var secs = Math.floor(seconds % 60);
+          return (hours < 10 ? "0" : "") + hours + ":" + 
+                 (minutes < 10 ? "0" : "") + minutes + ":" + 
+                 (secs < 10 ? "0" : "") + secs;
+        }
+        
+        // 复制链接函数（全局）
+        window.copyUrl = function(url) {
+          var tempInput = $("<input>");
+          $("body").append(tempInput);
+          tempInput.val(url).select();
+          document.execCommand("copy");
+          tempInput.remove();
+          layer.msg("链接已复制到剪贴板", { icon: 1, time: 1000 });
+        };
+
+        // 删除上传记录（同时删除服务器文件和本地历史）
+        window.deleteUpload = function(id, btn) {
+          if (!id) {
+            layer.msg("记录ID缺失，无法删除", { icon: 2, time: 1500 });
+            return;
+          }
+          layer.confirm("确定要删除这条记录以及服务器上的文件吗？", {icon: 3, title: "提示", btn: ["确定", "取消"]}, function(index) {
+            layer.close(index);
+            // 显示删除进度条
+            $("#delete-progress-container").show();
+            element.progress("delete-progress", "0%");
+            $("#delete-progress-text").text("0% - 开始删除...");
+
+            $.post("/delete_upload", { id: id }, function(res) {
+              if (res.code === 0) {
+                element.progress("delete-progress", "100%");
+                $("#delete-progress-text").text("100% - 删除完成");
+                // 从表格中移除该行
+                if (btn) {
+                  var $tr = $(btn).closest("tr");
+                  $tr.remove();
+                  // 如果表格空了，提示暂无记录
+                  if ($("#history-table tbody tr").length === 0) {
+                    $("#history-table tbody").append("<tr><td colspan='7'>暂无记录</td></tr>");
+                  }
+                } else {
+                  // 兜底：重新加载历史
+                  loadHistory();
+                }
+                layer.msg(res.msg || "删除成功", { icon: 1, time: 1500 });
+                setTimeout(function () {
+                  $("#delete-progress-container").hide();
+                }, 600);
+              } else {
+                layer.msg(res.msg || "删除失败", { icon: 2, time: 2000 });
+                $("#delete-progress-text").text("删除失败");
+                setTimeout(function () {
+                  $("#delete-progress-container").hide();
+                }, 1000);
+              }
+            }).fail(function() {
+              layer.msg("删除失败，请检查网络或服务器", { icon: 2, time: 2000 });
+              $("#delete-progress-text").text("删除失败：网络或服务器错误");
+              setTimeout(function () {
+                $("#delete-progress-container").hide();
+              }, 1000);
+            });
+          });
+        };
+
+        // 页面加载时加载历史记录
+        loadHistory();
+      });
+    </script>
+  </body>
+</html>
+
