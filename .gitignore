@@ -2,6 +2,7 @@
 venv/
 env/
 ENV/
+aliyun/results/
 .venv
 __pycache__/
 *.py[cod]
