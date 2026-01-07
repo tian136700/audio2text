@@ -47,6 +47,8 @@ import uuid
 load_dotenv()
 import cut_tool
 import convert_mp3_tool
+import password_generator
+import upload_to_server_tool
 
 # 说话人识别相关
 try:
@@ -182,6 +184,7 @@ def index():
        language=cfg.LANG,
        version=stslib.version_str,
        root_dir=ROOT_DIR.replace('\\', '/'),
+       current_page='/',
        model_list=cfg.sets.get('model_list')
     )
 
@@ -199,6 +202,7 @@ def cut_page():
         lang_code=cfg.lang_code,
         language=cfg.LANG,
         devtype=sets.get("devtype"),
+        current_page='/cut',
     )
 
 
@@ -301,7 +305,156 @@ def convert_mp3_page():
         lang_code=cfg.lang_code,
         language=cfg.LANG,
         devtype=sets.get("devtype"),
+        current_page='/convert_mp3',
     )
+
+
+@app.route('/password_generator', methods=['GET'])
+def password_generator_page():
+    """
+    随机密码生成独立页面
+    访问地址: http://127.0.0.1:9977/password_generator
+    """
+    sets = cfg.parse_ini()
+    return render_template(
+        "password_generator.html",
+        version=stslib.version_str,
+        lang_code=cfg.lang_code,
+        language=cfg.LANG,
+        devtype=sets.get("devtype"),
+        current_page='/password_generator',
+    )
+
+
+@app.route('/upload_to_server', methods=['GET'])
+def upload_to_server_page():
+    """
+    上传到服务器独立页面
+    访问地址: http://127.0.0.1:9977/upload_to_server
+    """
+    sets = cfg.parse_ini()
+    return render_template(
+        "upload_to_server.html",
+        version=stslib.version_str,
+        lang_code=cfg.lang_code,
+        language=cfg.LANG,
+        devtype=sets.get("devtype"),
+        current_page='/upload_to_server',
+    )
+
+
+@app.route('/upload_to_server', methods=['POST'])
+def upload_to_server():
+    """
+    上传文件到服务器
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({"code": 1, "msg": "没有上传文件"})
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"code": 1, "msg": "文件名为空"})
+        
+        # 保存临时文件
+        filename = secure_filename(file.filename)
+        temp_file = os.path.join(cfg.TMP_DIR, filename)
+        file.save(temp_file)
+        
+        # 上传到服务器
+        result = upload_to_server_tool.upload_file_to_server(temp_file)
+        
+        # 删除临时文件
+        try:
+            os.remove(temp_file)
+        except:
+            pass
+        
+        if result.get("success"):
+            return jsonify({
+                "code": 0,
+                "msg": "上传成功",
+                "data": result.get("record")
+            })
+        else:
+            return jsonify({
+                "code": 1,
+                "msg": f"上传失败: {result.get('error', '未知错误')}"
+            })
+            
+    except Exception as e:
+        app.logger.error(f'[upload_to_server]error: {e}')
+        return jsonify({"code": 1, "msg": str(e)})
+
+
+@app.route('/upload_history', methods=['GET'])
+def upload_history():
+    """
+    获取上传历史记录
+    """
+    try:
+        limit = int(request.args.get('limit', 100))
+        history = upload_to_server_tool.load_history(limit=limit)
+        return jsonify({"code": 0, "msg": "获取成功", "data": history})
+    except Exception as e:
+        app.logger.error(f'[upload_history]error: {e}')
+        return jsonify({"code": 1, "msg": str(e)})
+
+
+@app.route('/generate_password', methods=['POST'])
+def generate_password():
+    """
+    生成随机密码
+    """
+    try:
+        length = int(request.form.get("length", 16))
+        count = int(request.form.get("count", 1))
+        include_uppercase = request.form.get("include_uppercase") == "true"
+        include_lowercase = request.form.get("include_lowercase") == "true"
+        include_digits = request.form.get("include_digits") == "true"
+        include_special = request.form.get("include_special") == "true"
+        exclude_similar = request.form.get("exclude_similar") == "true"
+        exclude_ambiguous = request.form.get("exclude_ambiguous") == "true"
+        
+        # 验证参数
+        if length < 8 or length > 128:
+            return jsonify({"code": 1, "msg": "密码长度必须在 8-128 之间"})
+        
+        if count < 1 or count > 50:
+            return jsonify({"code": 1, "msg": "生成数量必须在 1-50 之间"})
+        
+        if not include_uppercase and not include_lowercase and not include_digits and not include_special:
+            return jsonify({"code": 1, "msg": "请至少选择一种字符类型"})
+        
+        # 生成密码
+        if count == 1:
+            result = password_generator.generate_password(
+                length=length,
+                include_uppercase=include_uppercase,
+                include_lowercase=include_lowercase,
+                include_digits=include_digits,
+                include_special=include_special,
+                exclude_similar=exclude_similar,
+                exclude_ambiguous=exclude_ambiguous
+            )
+            passwords = [result]
+        else:
+            passwords = password_generator.generate_multiple_passwords(
+                count=count,
+                length=length,
+                include_uppercase=include_uppercase,
+                include_lowercase=include_lowercase,
+                include_digits=include_digits,
+                include_special=include_special,
+                exclude_similar=exclude_similar,
+                exclude_ambiguous=exclude_ambiguous
+            )
+        
+        return jsonify({"code": 0, "msg": "生成成功", "data": passwords})
+        
+    except Exception as e:
+        app.logger.error(f'[generate_password]error: {e}')
+        return jsonify({"code": 1, "msg": str(e)})
 
 
 @app.route('/convert_audio', methods=['POST'])
@@ -897,21 +1050,21 @@ if __name__ == '__main__':
     else:
         # 生产模式：保持原来的 gevent 启动方式
         http_server = None
+    try:
+        threading.Thread(target=tool.checkupdate).start()
+        threading.Thread(target=shibie).start()
         try:
-            threading.Thread(target=tool.checkupdate).start()
-            threading.Thread(target=shibie).start()
-            try:
-                if cfg.devtype=='cpu':
-                    print('\n如果设备使用英伟达显卡并且CUDA环境已正确安装，可修改set.ini中\ndevtype=cpu 为 devtype=cuda, 然后重新启动以加快识别速度\n')
-                host = cfg.web_address.split(':')
-                http_server = WSGIServer((host[0], int(host[1])), app, handler_class=CustomRequestHandler)
-                threading.Thread(target=tool.openweb, args=(cfg.web_address,)).start()
-                http_server.serve_forever()
-            finally:
-                if http_server:
-                    http_server.stop()
-        except Exception as e:
+            if cfg.devtype=='cpu':
+                print('\n如果设备使用英伟达显卡并且CUDA环境已正确安装，可修改set.ini中\ndevtype=cpu 为 devtype=cuda, 然后重新启动以加快识别速度\n')
+            host = cfg.web_address.split(':')
+            http_server = WSGIServer((host[0], int(host[1])), app, handler_class=CustomRequestHandler)
+            threading.Thread(target=tool.openweb, args=(cfg.web_address,)).start()
+            http_server.serve_forever()
+        finally:
             if http_server:
                 http_server.stop()
-            print("error:" + str(e))
-            app.logger.error(f"[app]start error:{str(e)}")
+    except Exception as e:
+        if http_server:
+            http_server.stop()
+        print("error:" + str(e))
+        app.logger.error(f"[app]start error:{str(e)}")

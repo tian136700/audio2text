@@ -97,32 +97,7 @@
       <div class="layui-header" style="background: #16b777;z-index:1">
         <div class="layui-logo layui-hide-xs" style="color: #fff">转MP3格式</div>
       </div>
-      <!-- 侧边栏 -->
-      <div class="layui-side layui-bg-black" id="sidebar">
-        <div class="layui-side-scroll">
-          <ul class="layui-nav layui-nav-tree" lay-filter="nav">
-            <li class="layui-nav-item">
-              <a href="/" data-cn="语音识别" data-en="Speech Recognition">
-                <i class="layui-icon layui-icon-mic"></i> <span class="menu-text"></span>
-              </a>
-            </li>
-            <li class="layui-nav-item">
-              <a href="/cut" data-cn="音频截取" data-en="Audio Cut">
-                <i class="layui-icon layui-icon-cut"></i> <span class="menu-text"></span>
-              </a>
-            </li>
-            <li class="layui-nav-item layui-nav-itemed">
-              <a href="/convert_mp3" data-cn="转MP3格式" data-en="Convert to MP3">
-                <i class="layui-icon layui-icon-play"></i> <span class="menu-text"></span>
-              </a>
-            </li>
-          </ul>
-        </div>
-      </div>
-      <!-- 隐藏/显示侧边栏按钮 -->
-      <button class="sidebar-toggle" id="sidebar-toggle" title="隐藏/显示菜单">
-        <i class="layui-icon layui-icon-shrink-right"></i>
-      </button>
+      {% include 'includes/sidebar.html' %}
       <!-- 内容主体区域 -->
       <div class="layui-body">
         <div id="content">

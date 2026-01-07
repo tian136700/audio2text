@@ -1,0 +1,33 @@
+<!-- 侧边栏脚本 -->
+<script>
+  // 侧边栏隐藏/显示功能
+  var sidebarHidden = false;
+  $("#sidebar-toggle").click(function() {
+    sidebarHidden = !sidebarHidden;
+    if (sidebarHidden) {
+      $("#sidebar").addClass("hide");
+      $(".layui-body").addClass("sidebar-hidden");
+      $(this).addClass("sidebar-hidden");
+      $(this).find("i").removeClass("layui-icon-shrink-right").addClass("layui-icon-spread-left");
+    } else {
+      $("#sidebar").removeClass("hide");
+      $(".layui-body").removeClass("sidebar-hidden");
+      $(this).removeClass("sidebar-hidden");
+      $(this).find("i").removeClass("layui-icon-spread-left").addClass("layui-icon-shrink-right");
+    }
+  });
+  
+  // 强制显示中文菜单
+  let language = "zh";
+  $("[data-cn]").each(function () {
+    var $this = $(this);
+    var text = $this.attr("data-cn");
+    var $menuText = $this.find(".menu-text");
+    if ($menuText.length) {
+      $menuText.text(text);
+    } else {
+      $this.html($this.html() + text);
+    }
+  });
+</script>
+

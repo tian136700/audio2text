@@ -199,32 +199,7 @@
           </li>
         </ul>
       </div>
-      <!-- 侧边栏 -->
-      <div class="layui-side layui-bg-black" id="sidebar">
-        <div class="layui-side-scroll">
-          <ul class="layui-nav layui-nav-tree" lay-filter="nav">
-            <li class="layui-nav-item layui-nav-itemed">
-              <a href="/" data-cn="语音识别" data-en="Speech Recognition">
-                <i class="layui-icon layui-icon-mic"></i> <span class="menu-text"></span>
-              </a>
-            </li>
-            <li class="layui-nav-item">
-              <a href="/cut" data-cn="音频截取" data-en="Audio Cut">
-                <i class="layui-icon layui-icon-cut"></i> <span class="menu-text"></span>
-              </a>
-            </li>
-            <li class="layui-nav-item">
-              <a href="/convert_mp3" data-cn="转MP3格式" data-en="Convert to MP3">
-                <i class="layui-icon layui-icon-play"></i> <span class="menu-text"></span>
-              </a>
-            </li>
-          </ul>
-        </div>
-      </div>
-      <!-- 隐藏/显示侧边栏按钮 -->
-      <button class="sidebar-toggle" id="sidebar-toggle" title="隐藏/显示菜单">
-        <i class="layui-icon layui-icon-shrink-right"></i>
-      </button>
+      {% include 'includes/sidebar.html' %}
       <!-- 内容主体区域 -->
       <div class="layui-body">
         <div id="content">
@@ -632,27 +607,41 @@
             console.log(res);
           },
           allDone: function () {
-			layer.close(layindex1)
-            const file_element = pending_files.reduce((prev, cur) => {
-              return `${prev}
-                    <div class="flex" name="${cur.data}">
-                        <span class="name">${cur.msg} ${cur.data || ""}</span>
-                        <audio src="/static/tmp/${cur.data}" controls></audio>
-                        <div class="status"></div>
-                        <div class="progress-container" id="progress-${cur.data.replace(/\./g, '-')}">
-                            <div class="layui-progress" lay-showpercent="true" lay-filter="progress-${cur.data.replace(/\./g, '-')}">
-                                <div class="layui-progress-bar" lay-percent="0%"></div>
-                            </div>
-                            <div class="status-text" id="status-text-${cur.data.replace(/\./g, '-')}"></div>
-                        </div>
-                    </div>
-                    `;
-            }, "");
-            $("#preview").removeClass("layui-hide").html(`
-                    <hr>
-                    <div class="preview-scroll">${file_element}</div>
-                `);
-			layer.msg(language === "zh"?'上传完成，可以点击开始识别了':'The upload is complete and you can click on Start Recognizing')
+			layer.close(layindex1);
+            // 清空预览区域
+            var $preview = $("#preview");
+            var $previewScroll = $("<div>").addClass("preview-scroll");
+            
+            // 使用 jQuery 创建每个文件元素
+            $.each(pending_files, function(index, file) {
+              var progressId = "progress-" + file.data.replace(/\./g, '-');
+              var filter = "progress-" + file.data.replace(/\./g, '-');
+              
+              var $flex = $("<div>").addClass("flex").attr("name", file.data);
+              $flex.append($("<span>").addClass("name").text(file.msg + " " + (file.data || "")));
+              $flex.append($("<audio>").attr("src", "/static/tmp/" + file.data).attr("controls", true));
+              $flex.append($("<div>").addClass("status"));
+              
+              var $progressContainer = $("<div>").addClass("progress-container").attr("id", progressId);
+              var $progress = $("<div>").addClass("layui-progress")
+                .attr("lay-showpercent", "true")
+                .attr("lay-filter", filter);
+              $progress.append($("<div>").addClass("layui-progress-bar").attr("lay-percent", "0%"));
+              $progressContainer.append($progress);
+              $progressContainer.append($("<div>").addClass("status-text").attr("id", "status-text-" + file.data.replace(/\./g, '-')));
+              
+              $flex.append($progressContainer);
+              $previewScroll.append($flex);
+            });
+            
+            $preview.empty().append($("<hr>")).append($previewScroll).removeClass("layui-hide");
+            
+            // 重新渲染进度条
+            if (typeof layui !== 'undefined' && layui.element) {
+              layui.element.render('progress');
+            }
+            
+			layer.msg(language === "zh" ? '上传完成，可以点击开始识别了' : 'The upload is complete and you can click on Start Recognizing');
           },
         });
         // 导出
