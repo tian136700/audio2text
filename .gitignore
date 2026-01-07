@@ -3,6 +3,7 @@ venv/
 env/
 ENV/
 aliyun/results/
+aliyun/aliyun_history.json
 .venv
 __pycache__/
 *.py[cod]
