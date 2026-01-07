@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>阿里云语音识别</title>
+    <meta name="renderer" content="webkit" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="/static/layui/css/layui.css" rel="stylesheet" />
+    <style>
+      #content {
+        width: 95%;
+        min-width: 800px;
+        max-width: 2000px;
+        margin: 40px auto 50px;
+      }
+      .layui-header {
+        background: #16b777;
+      }
+      .section-title {
+        font-size: 18px;
+        margin: 15px 0;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .section-title .toggle-btn {
+        font-size: 14px;
+        padding: 4px 12px;
+        cursor: pointer;
+        color: #1E9FFF;
+        border: 1px solid #1E9FFF;
+        border-radius: 4px;
+        background: #fff;
+        transition: all 0.3s;
+      }
+      .section-title .toggle-btn:hover {
+        background: #1E9FFF;
+        color: #fff;
+      }
+      .result-area.hidden {
+        display: none;
+      }
+      .layui-side {
+        width: 200px;
+        top: 60px;
+        transition: margin-left 0.3s;
+      }
+      .layui-side.hide {
+        margin-left: -200px;
+      }
+      .layui-body {
+        top: 60px;
+        padding: 15px;
+        transition: left 0.3s;
+      }
+      .layui-body.sidebar-hidden {
+        left: 0 !important;
+      }
+      .sidebar-toggle {
+        position: fixed;
+        left: 200px;
+        top: 60px;
+        z-index: 1000;
+        background: #393D49;
+        color: #fff;
+        border: none;
+        padding: 10px 5px;
+        cursor: pointer;
+        border-radius: 0 4px 4px 0;
+        transition: left 0.3s;
+      }
+      .sidebar-toggle:hover {
+        background: #2F3437;
+      }
+      .sidebar-toggle.sidebar-hidden {
+        left: 0;
+      }
+      .source-block {
+        margin-top: 15px;
+        padding: 15px;
+        border: 1px solid #eee;
+        border-radius: 4px;
+      }
+      .result-area {
+        margin-top: 20px;
+        padding: 15px;
+        border: 1px solid #b3d8ff;
+        background: #f0f9ff;
+        border-radius: 4px;
+        display: none;
+      }
+      .history-table {
+        margin-top: 20px;
+      }
+      .small-text {
+        font-size: 12px;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layui-layout layui-layout-admin">
+      <div class="layui-header" style="background: #16b777;z-index:1">
+        <div class="layui-logo layui-hide-xs" style="color: #fff">阿里云语音识别</div>
+      </div>
+      {% include 'includes/sidebar.html' %}
+      <!-- 内容主体区域 -->
+      <div class="layui-body">
+        <div id="content">
+          <h2>阿里云语音识别</h2>
+          <p>可以选择服务器上已有的音频文件，或者先上传到服务器后再进行阿里云语音识别。</p>
+
+          <!-- 音频来源选择 -->
+          <div class="section-title">1. 选择音频来源</div>
+          <div class="source-block">
+            <div class="layui-form" lay-filter="aliyun-form">
+              <div class="layui-form-item">
+                <label class="layui-form-label">音频来源</label>
+                <div class="layui-input-block">
+                  <input
+                    type="radio"
+                    name="source_type"
+                    value="server"
+                    title="从服务器 /data/audio 读取"
+                    checked
+                  />
+                  <input
+                    type="radio"
+                    name="source_type"
+                    value="upload"
+                    title="重新上传音频后识别"
+                  />
+                </div>
+              </div>
+
+              <!-- 服务器文件选择 -->
+              <div class="layui-form-item" id="server-source-block">
+                <label class="layui-form-label">服务器文件</label>
+                <div class="layui-input-inline" style="min-width: 360px;">
+                  <select id="server-file-select" lay-search>
+                    <option value="">请选择服务器上的音频文件</option>
+                  </select>
+                </div>
+                <div class="layui-form-mid layui-word-aux">
+                  文件来源于服务器目录 /data/audio
+                </div>
+              </div>
+
+              <!-- 上传来源 -->
+              <div class="layui-form-item" id="upload-source-block" style="display:none;">
+                <label class="layui-form-label">上传音频</label>
+                <div class="layui-input-block">
+                  <button type="button" class="layui-btn" id="upload-audio-btn">
+                    <i class="layui-icon layui-icon-upload"></i> 选择或拖拽音频文件
+                  </button>
+                  <span id="upload-audio-info" class="small-text" style="margin-left: 10px;"></span>
+                </div>
+                <div class="layui-form-mid layui-word-aux">
+                  上传完成后，会自动保存到服务器并使用该文件进行阿里云识别
+                </div>
+              </div>
+
+              <!-- 识别按钮 -->
+              <div class="layui-form-item">
+                <label class="layui-form-label">操作</label>
+                <div class="layui-input-block">
+                  <button type="button" class="layui-btn layui-btn-normal" id="start-recognize-btn">
+                    开始阿里云识别
+                  </button>
+                  <span id="current-file-url" class="small-text" style="margin-left: 10px;"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 识别结果 -->
+          <div class="section-title">
+            <span>2. 识别结果</span>
+            <button type="button" class="toggle-btn" id="toggle-recognize-result">隐藏</button>
+          </div>
+          <div class="result-area" id="recognize-result">
+            <div id="recognize-status" class="small-text"></div>
+            <div id="recognize-timer" class="small-text" style="margin-top: 4px;"></div>
+            <div id="recognize-preview" style="margin-top:10px; white-space: pre-wrap;"></div>
+            <!-- 日志显示区域 -->
+            <div style="margin-top:15px;">
+              <div style="font-weight:bold; margin-bottom:8px;">识别过程日志：</div>
+              <div id="recognize-logs" style="max-height:400px; overflow-y:auto; background:#f5f5f5; border:1px solid #ddd; padding:10px; font-family:monospace; font-size:12px; line-height:1.6; white-space:pre-wrap; word-wrap:break-word;"></div>
+            </div>
+            <pre id="recognize-raw" style="margin-top:10px; display:none; max-height:260px; overflow:auto; background:#fff; border:1px solid #eee; padding:8px; font-size:12px;"></pre>
+          </div>
+
+          <!-- 历史记录 -->
+          <div class="history-table">
+            <div class="section-title">3. 历史识别记录</div>
+            <table class="layui-table" id="aliyun-history-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>识别时间</th>
+                  <th>音频URL</th>
+                  <th>文本文件</th>
+                  <th>JSON文件</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/layui/layui.js"></script>
+    <script>
+      window.$ = layui.$;
+
+      // 强制显示中文
+      $("[data-cn]").each(function () {
+        var $this = $(this);
+        var text = $this.attr("data-cn");
+        var $menuText = $this.find(".menu-text");
+        if ($menuText.length) {
+          $menuText.text(text);
+        } else {
+          $this.html($this.html() + text);
+        }
+      });
+
+      layui.use(["form", "upload", "layer"], function () {
+        var form = layui.form;
+        var upload = layui.upload;
+        var layer = layui.layer;
+        var $ = layui.$;
+
+        // 识别结果区域显示/隐藏切换
+        $("#toggle-recognize-result").click(function () {
+          var $resultArea = $("#recognize-result");
+          var $btn = $(this);
+          if ($resultArea.hasClass("hidden")) {
+            $resultArea.removeClass("hidden");
+            $btn.text("隐藏");
+          } else {
+            $resultArea.addClass("hidden");
+            $btn.text("显示");
+          }
+        });
+
+        // 侧边栏显示/隐藏
+        var sidebarHidden = false;
+        $("#sidebar-toggle").click(function () {
+          sidebarHidden = !sidebarHidden;
+          if (sidebarHidden) {
+            $("#sidebar").addClass("hide");
+            $(".layui-body").addClass("sidebar-hidden");
+            $(this).addClass("sidebar-hidden");
+            $(this)
+              .find("i")
+              .removeClass("layui-icon-shrink-right")
+              .addClass("layui-icon-spread-left");
+          } else {
+            $("#sidebar").removeClass("hide");
+            $(".layui-body").removeClass("sidebar-hidden");
+            $(this).removeClass("sidebar-hidden");
+            $(this)
+              .find("i")
+              .removeClass("layui-icon-spread-left")
+              .addClass("layui-icon-shrink-right");
+          }
+        });
+
+        var currentFileUrl = ""; // 当前要识别的 URL
+        var recognizeTimer = null; // 识别计时器
+        var recognizeSeconds = 0;
+
+        // 切换来源
+        form.on("radio", function (data) {
+          if (data.elem.name !== "source_type") return;
+          if (data.value === "server") {
+            $("#server-source-block").show();
+            $("#upload-source-block").hide();
+          } else {
+            $("#server-source-block").hide();
+            $("#upload-source-block").show();
+          }
+        });
+
+        // 服务器文件列表（复用 /upload_history 接口）
+        function loadServerFiles() {
+          $.get("/upload_history", function (res) {
+            var $sel = $("#server-file-select");
+            $sel.empty();
+            $sel.append('<option value="">请选择服务器上的音频文件</option>');
+            if (res.code !== 0 || !res.data || !res.data.length) {
+              form.render("select");
+              return;
+            }
+            res.data.forEach(function (item) {
+              var url = item.download_url || "";
+              var name = item.file_name || url;
+              $sel.append(
+                '<option value="' +
+                  url +
+                  '">' +
+                  (name || url) +
+                  "</option>"
+              );
+            });
+            form.render("select");
+          });
+        }
+
+        // 监听服务器文件选择
+        form.on("select", function (data) {
+          if (data.elem.id === "server-file-select") {
+            currentFileUrl = data.value;
+            if (currentFileUrl) {
+              $("#current-file-url").text("当前音频URL: " + currentFileUrl);
+            } else {
+              $("#current-file-url").text("");
+            }
+          }
+        });
+
+        // 上传音频：直接复用 /upload_to_server 接口
+        upload.render({
+          elem: "#upload-audio-btn",
+          url: "/upload_to_server",
+          field: "file",
+          accept: "file",
+          exts: "mp4|mp3|flac|wav|aac|m4a|avi|mkv|mpeg|mov|wma|ogg",
+          before: function () {
+            $("#upload-audio-info").text("正在上传...");
+          },
+          done: function (res) {
+            if (res.code !== 0) {
+              layer.msg("上传失败：" + res.msg, { icon: 2, time: 2000 });
+              $("#upload-audio-info").text("上传失败");
+              return;
+            }
+            var record = res.data;
+            currentFileUrl = record.download_url;
+            $("#upload-audio-info").text(
+              "上传成功，文件名：" + (record.file_name || "") + "，将使用此文件进行识别"
+            );
+            $("#current-file-url").text("当前音频URL: " + currentFileUrl);
+          },
+          error: function () {
+            $("#upload-audio-info").text("上传失败，请检查网络或服务器");
+          },
+        });
+
+        // 开始识别（使用 SSE 实时日志）
+        $("#start-recognize-btn").click(function () {
+          if (!currentFileUrl) {
+            layer.msg("请先从服务器选择文件，或先上传音频文件", {
+              icon: 0,
+              time: 2000,
+            });
+            return;
+          }
+          $("#recognize-result").show();
+          $("#recognize-status").text("正在启动实时识别流程...");
+          $("#recognize-preview").text("");
+          $("#recognize-raw").hide().text("");
+          $("#recognize-logs").text(""); // 清空日志区域
+
+          // 启动计时器
+          if (recognizeTimer) {
+            clearInterval(recognizeTimer);
+          }
+          recognizeSeconds = 0;
+          $("#recognize-timer").text("已等待 0 秒...");
+          recognizeTimer = setInterval(function () {
+            recognizeSeconds += 1;
+            $("#recognize-timer").text("已等待 " + recognizeSeconds + " 秒...");
+          }, 1000);
+
+          // 使用 EventSource 接收实时日志
+          var eventSource = new EventSource("/aliyun_recognize_stream?" + $.param({ file_url: currentFileUrl }));
+          var logsDiv = $("#recognize-logs");
+          
+          eventSource.onmessage = function(event) {
+            // 接收日志消息
+            var logMsg = event.data;
+            var currentText = logsDiv.text();
+            logsDiv.text(currentText + (currentText ? "\n" : "") + logMsg);
+            // 自动滚动到底部
+            logsDiv.scrollTop(logsDiv[0].scrollHeight);
+          };
+          
+          eventSource.addEventListener('end', function(event) {
+            // 识别完成，接收最终结果
+            eventSource.close();
+            if (recognizeTimer) {
+              clearInterval(recognizeTimer);
+              $("#recognize-timer").text("总耗时 " + recognizeSeconds + " 秒");
+            }
+            
+            try {
+              var result = JSON.parse(event.data);
+              if (result.code === 0) {
+                var record = result.data || {};
+                $("#recognize-status").text("识别成功，时间：" + (record.created_at || ""));
+                $("#recognize-preview").text(record.preview || "(无预览文本)");
+                $("#recognize-raw").show().text(JSON.stringify(result, null, 2));
+                layer.msg("识别成功", { icon: 1, time: 1500 });
+                loadAliyunHistory();
+              } else {
+                $("#recognize-status").text("识别失败：" + (result.msg || "未知错误"));
+                $("#recognize-raw").show().text(JSON.stringify(result, null, 2));
+                layer.msg(result.msg || "识别失败", { icon: 2, time: 2000 });
+              }
+            } catch (e) {
+              $("#recognize-status").text("解析结果失败：" + e.message);
+              layer.msg("解析结果失败", { icon: 2, time: 2000 });
+            }
+          });
+          
+          eventSource.onerror = function(event) {
+            eventSource.close();
+            if (recognizeTimer) {
+              clearInterval(recognizeTimer);
+              $("#recognize-timer").text("总耗时 " + recognizeSeconds + " 秒");
+            }
+            $("#recognize-status").text("连接错误，识别可能失败");
+            $("#recognize-logs").text($("#recognize-logs").text() + "\n[错误] 连接中断");
+            layer.msg("连接错误，请检查网络或服务器", { icon: 2, time: 2000 });
+          };
+
+          // 旧的 POST 方式（保留作为备用）
+          /*
+          $.post("/aliyun_recognize", { file_url: currentFileUrl }, function (res) {
+            if (recognizeTimer) {
+              clearInterval(recognizeTimer);
+              $("#recognize-timer").text("总耗时 " + recognizeSeconds + " 秒");
+            }
+            
+            // 显示日志
+            var logs = res.logs || [];
+            var logText = "";
+            if (logs && logs.length > 0) {
+              // 后端已经包含了 Flask 层的日志，直接显示即可
+              logText = logs.join("\n");
+            } else {
+              logText = "未获取到日志信息";
+            }
+            $("#recognize-logs").text(logText);
+            // 自动滚动到底部
+            var logsDiv = $("#recognize-logs");
+            logsDiv.scrollTop(logsDiv[0].scrollHeight);
+            
+            if (res.code !== 0) {
+              $("#recognize-status").text("第 2 步：识别失败，后端返回 code=" + res.code + "，消息：" + (res.msg || "未知错误"));
+              $("#recognize-raw").show().text(JSON.stringify(res, null, 2));
+              layer.msg(res.msg || "识别失败", { icon: 2, time: 2000 });
+              return;
+            }
+            var record = res.data || {};
+            $("#recognize-status").text("第 2 步：识别成功，时间：" + (record.created_at || "") + "（后端返回 code=0）");
+            $("#recognize-preview").text(record.preview || "(无预览文本)");
+            $("#recognize-raw").show().text(JSON.stringify(res, null, 2));
+            layer.msg("识别成功", { icon: 1, time: 1500 });
+            loadAliyunHistory();
+          }).fail(function () {
+            if (recognizeTimer) {
+              clearInterval(recognizeTimer);
+              $("#recognize-timer").text("总耗时 " + recognizeSeconds + " 秒");
+            }
+            $("#recognize-status").text("第 2 步：识别失败，网络或服务器错误（请求未到达后端或后端未正常响应）");
+            $("#recognize-logs").text("网络请求失败，无法获取日志信息");
+            layer.msg("识别失败，请检查网络或服务器", { icon: 2, time: 2000 });
+          });
+          */
+        });
+
+        // 加载阿里云历史记录
+        function loadAliyunHistory() {
+          $.get("/aliyun_history", function (res) {
+            var tbody = $("#aliyun-history-table tbody");
+            tbody.empty();
+
+            if (res.code !== 0 || !res.data || !res.data.length) {
+              tbody.append("<tr><td colspan='4'>暂无记录</td></tr>");
+              return;
+            }
+
+            res.data.forEach(function (item, index) {
+              var id = item.id || "";
+              var textFile = item.text_path ? ("aliyun/" + item.text_path) : "";
+              var jsonFile = item.json_path ? ("aliyun/" + item.json_path) : "";
+              var tr =
+                "<tr>" +
+                "<td>" +
+                (index + 1) +
+                "</td>" +
+                "<td>" +
+                (item.created_at || "") +
+                "</td>" +
+                "<td><a href='" +
+                (item.file_url || "#") +
+                "' target='_blank' style='color:#1E9FFF;'>" +
+                (item.file_url || "") +
+                "</a></td>" +
+                "<td>" +
+                (textFile
+                  ? "<a href='/aliyun_download?id=" + id + "&type=text' target='_blank' style='color:#1E9FFF;'>" + textFile + "</a>"
+                  : "—") +
+                "</td>" +
+                "<td>" +
+                (jsonFile
+                  ? "<a href='/aliyun_download?id=" + id + "&type=json' target='_blank' style='color:#1E9FFF;'>" + jsonFile + "</a>"
+                  : "—") +
+                "</td>" +
+                "<td>" +
+                (id
+                  ? "<button type='button' class='layui-btn layui-btn-xs' onclick=\"window.open('/aliyun_preview?id=" +
+                    id +
+                    "','_blank')\">预览</button>" +
+                    " <button type='button' class='layui-btn layui-btn-xs layui-btn-normal' onclick=\"window.open('/aliyun_download?id=" +
+                    id +
+                    "&type=text','_blank')\">下载文本</button>" +
+                    " <button type='button' class='layui-btn layui-btn-xs layui-btn-primary' onclick=\"window.open('/aliyun_download?id=" +
+                    id +
+                    "&type=json','_blank')\">下载JSON</button>"
+                  : "—") +
+                "</td>" +
+                "</tr>";
+              tbody.append(tr);
+            });
+          }).fail(function () {
+            var tbody = $("#aliyun-history-table tbody");
+            tbody.empty();
+            tbody.append("<tr><td colspan='4'>加载失败</td></tr>");
+          });
+        }
+
+        // 初始化
+        loadServerFiles();
+        loadAliyunHistory();
+      });
+    </script>
+  </body>
+</html>
+
+
