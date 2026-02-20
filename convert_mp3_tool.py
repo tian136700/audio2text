@@ -150,11 +150,95 @@ def clear_convert_progress(task_id: str):
 
 def list_convert_history(limit: int = 50) -> List[Dict]:
     """
-    获取历史转换记录（按时间倒序）
+    获取历史转换记录（从数据库 server_files 表读取，按上传时间倒序）
 
     :param limit: 返回记录数量限制
     :return: 历史记录列表
     """
+    # 优先从数据库读取
+    try:
+        from server_upload import db as db_module
+        files = db_module.get_files(limit=limit)
+        
+        items: List[Dict] = []
+        for file_info in files:
+            file_name = file_info.get('file_name', '')
+            # 只处理 MP3 文件（或者所有文件，因为转换后的文件可能在服务器上）
+            # 检查文件是否在 convert 目录中
+            convert_dir = os.path.join(cfg.STATIC_DIR, "convert")
+            convert_file_path = os.path.join(convert_dir, file_name)
+            
+            # 如果文件在 convert 目录中，或者文件是 MP3 格式，则包含在转换历史中
+            if file_name.lower().endswith('.mp3') or os.path.exists(convert_file_path):
+                # 获取文件大小（优先从数据库，否则从文件系统）
+                file_size = file_info.get('file_size', 0)
+                if not file_size and os.path.exists(convert_file_path):
+                    try:
+                        file_size = os.path.getsize(convert_file_path)
+                    except:
+                        file_size = 0
+                
+                # 获取操作时间（优先从数据库的上传时间）
+                upload_time = file_info.get('upload_time', '')
+                mtime = None
+                mtime_str = upload_time
+                
+                # 如果数据库中没有时间，尝试从文件系统获取
+                if not upload_time and os.path.exists(convert_file_path):
+                    try:
+                        mtime = os.path.getmtime(convert_file_path)
+                        mtime_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
+                    except:
+                        mtime_str = ""
+                
+                # 获取下载 URL（优先使用数据库中的 download_url，否则使用 convert 目录的 URL）
+                download_url = file_info.get('download_url', '')
+                if not download_url:
+                    download_url = f"/static/convert/{file_name}"
+                
+                # 获取原始文件名（中文名称）
+                original_name = file_info.get('original_name', '')
+                if not original_name:
+                    # 如果没有中文名称，尝试从文件名提取（去除时间戳后缀）
+                    base_name = os.path.splitext(file_name)[0]
+                    if '_' in base_name:
+                        parts = base_name.rsplit('_', 1)
+                        if len(parts) == 2 and parts[1].isdigit():
+                            original_name = parts[0]
+                        else:
+                            original_name = base_name
+                    else:
+                        original_name = base_name
+                
+                items.append({
+                    "id": file_info.get('id', 0),  # 数据库自增ID
+                    "file_id": file_info.get('file_id', ''),  # 文件ID（原文件名）
+                    "file_name": file_name,
+                    "original_name": original_name,  # 原始文件名（中文名称，如果没有则留空）
+                    "url": download_url,
+                    "download_url": file_info.get('download_url', download_url),  # 下载链接
+                    "size": file_size,
+                    "size_mb": file_info.get('file_size_mb', round(file_size / (1024 * 1024), 2)),
+                    "file_duration": file_info.get('file_duration', 0),  # 文件时长（秒）
+                    "file_duration_str": file_info.get('file_duration_str', ''),  # 文件时长（字符串格式）
+                    "upload_time": file_info.get('upload_time', ''),  # 上传时间
+                    "upload_duration": file_info.get('upload_duration'),  # 上传耗时（秒）
+                    "uploader_ip": file_info.get('uploader_ip', ''),  # 操作人IP地址
+                    "remote_path": file_info.get('remote_path', ''),  # 服务器路径
+                    "mtime": mtime,
+                    "mtime_str": mtime_str,
+                })
+        
+        # 按操作时间降序排序（最新的在前）
+        items.sort(key=lambda x: x.get("mtime_str", ""), reverse=True)
+        
+        return items[:limit]
+    except ImportError:
+        print("[convert_mp3_tool] 警告：无法导入数据库模块，回退到文件系统")
+    except Exception as e:
+        print(f"[convert_mp3_tool] 从数据库读取转换历史失败: {e}")
+    
+    # 回退到文件系统读取（兼容旧代码）
     convert_dir = os.path.join(cfg.STATIC_DIR, "convert")
     if not os.path.exists(convert_dir):
         return []

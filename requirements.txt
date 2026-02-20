@@ -7,3 +7,13 @@ fsspec
 opencc-python-reimplemented
 pyannote.audio
 python-dotenv
+schedule
+pypinyin
+python-docx
+reportlab
+
+python-docx
+reportlab
+
+python-docx
+reportlab

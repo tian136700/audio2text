@@ -13,6 +13,16 @@
         min-width: 800px;
         max-width: 2000px;
         margin: 40px auto 50px;
+        overflow-x: hidden;
+        box-sizing: border-box;
+      }
+      /* 小屏幕下取消最小宽度限制 */
+      @media (max-width: 900px) {
+        #content {
+          min-width: 0;
+          width: 100%;
+          padding: 0 10px;
+        }
       }
       .layui-header {
         background: #16b777;
@@ -93,6 +103,73 @@
       }
       .history-table {
         margin-top: 20px;
+        overflow-x: auto;
+      }
+      /* 历史记录表格自动换行 */
+      #aliyun-history-table {
+        table-layout: auto;
+        width: 100%;
+      }
+      #aliyun-history-table th,
+      #aliyun-history-table td {
+        word-wrap: break-word;
+        word-break: break-all;
+        overflow-wrap: break-word;
+        white-space: normal;
+        padding: 8px 10px;
+        vertical-align: middle;
+      }
+      /* 表头样式，确保与表体一致 */
+      #aliyun-history-table th {
+        white-space: normal;
+        text-align: center;
+        font-weight: bold;
+        /* 表头不设置固定宽度，让它根据内容自动调整 */
+      }
+      /* 为各列设置最小宽度，但允许根据内容动态调整 */
+      #aliyun-history-table th:nth-child(1),
+      #aliyun-history-table td:nth-child(1) {
+        min-width: 60px;
+        width: auto;
+      }
+      #aliyun-history-table th:nth-child(2),
+      #aliyun-history-table td:nth-child(2) {
+        min-width: 150px;
+        width: auto;
+      }
+      #aliyun-history-table th:nth-child(3),
+      #aliyun-history-table td:nth-child(3) {
+        min-width: 200px;
+        width: auto;
+      }
+      #aliyun-history-table th:nth-child(4),
+      #aliyun-history-table td:nth-child(4) {
+        min-width: 150px;
+        width: auto;
+      }
+      #aliyun-history-table th:nth-child(5),
+      #aliyun-history-table td:nth-child(5) {
+        min-width: 150px;
+        width: auto;
+      }
+      #aliyun-history-table th:nth-child(6),
+      #aliyun-history-table td:nth-child(6) {
+        min-width: 200px;
+        width: auto;
+        white-space: normal;
+      }
+      /* 操作列的按钮容器使用 flex 布局，允许换行 */
+      #aliyun-history-table td:nth-child(6) {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+      }
+      /* 链接和按钮容器也允许换行 */
+      #aliyun-history-table td a {
+        word-break: break-all;
+        display: inline-block;
+        max-width: 100%;
       }
       .small-text {
         font-size: 12px;
@@ -123,7 +200,7 @@
                     type="radio"
                     name="source_type"
                     value="server"
-                    title="从服务器 /data/audio 读取"
+                    title="从服务器文件读取（MySQL server_files 表）"
                     checked
                   />
                   <input
@@ -144,7 +221,7 @@
                   </select>
                 </div>
                 <div class="layui-form-mid layui-word-aux">
-                  文件来源于服务器目录 /data/audio
+                  文件来源于 MySQL server_files 表（服务器文件数据库）
                 </div>
               </div>
 
@@ -287,9 +364,9 @@
           }
         });
 
-        // 服务器文件列表（复用 /upload_history 接口）
+        // 从 server_files_cache.json 读取服务器文件缓存
         function loadServerFiles() {
-          $.get("/upload_history", function (res) {
+          $.get("/aliyun_upload_history_files", function (res) {
             var $sel = $("#server-file-select");
             $sel.empty();
             $sel.append('<option value="">请选择服务器上的音频文件</option>');
@@ -299,12 +376,33 @@
             }
             res.data.forEach(function (item) {
               var url = item.download_url || "";
-              var name = item.file_name || url;
+              if (!url) return;
+              
+              // 显示格式：ID - 原文件名称（original_name 如果有则显示，没有则留空）
+              var fileId = item.id || "";
+              var fileName = item.file_name || "";
+              var originalName = item.original_name || "";  // 如果没有则为空
+              
+              // 构建显示文本：ID - 原文件名称 [子文件名称]
+              var displayText = "";
+              if (fileId) {
+                displayText = fileId + " - " + fileName;
+              } else {
+                displayText = fileName;
+              }
+              
+              // 如果有子文件名称，添加到显示文本中
+              if (originalName) {
+                displayText += " [" + originalName + "]";
+              }
+              
               $sel.append(
                 '<option value="' +
                   url +
-                  '">' +
-                  (name || url) +
+                  '" data-id="' + fileId +
+                  '" data-file-name="' + fileName +
+                  '" data-original-name="' + originalName + '">' +
+                  displayText +
                   "</option>"
               );
             });

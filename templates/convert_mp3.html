@@ -37,6 +37,86 @@
       .history-table {
         margin-top: 20px;
       }
+      .layui-table {
+        table-layout: auto;
+      }
+      .layui-table th,
+      .layui-table td {
+        word-wrap: break-word;
+        word-break: break-all;
+        white-space: normal;
+        vertical-align: middle;
+        padding: 8px 10px;
+      }
+      .layui-table th {
+        white-space: nowrap;
+      }
+      .layui-table td {
+        max-width: 400px;
+      }
+      .file-name-cell {
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .file-name-cell:hover {
+        white-space: normal;
+        word-break: break-all;
+      }
+      .original-name-cell {
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #666;
+      }
+      .original-name-cell:hover {
+        white-space: normal;
+        word-break: break-all;
+      }
+      .file-id-cell {
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #999;
+        font-size: 12px;
+      }
+      .file-id-cell:hover {
+        white-space: normal;
+        word-break: break-all;
+      }
+      .server-path-cell {
+        max-width: 400px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #666;
+        font-size: 12px;
+      }
+      .server-path-cell:hover {
+        white-space: normal;
+        word-break: break-all;
+      }
+      .download-url-cell {
+        max-width: 400px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .download-url-cell:hover {
+        white-space: normal;
+        word-break: break-all;
+      }
+      .uploader-ip-cell {
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #666;
+        font-size: 12px;
+      }
       .layui-side {
         width: 200px;
         top: 60px;
@@ -143,12 +223,15 @@
             <table class="layui-table" id="history-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>文件名</th>
-                  <th>原始文件名</th>
-                  <th>大小 (MB)</th>
-                  <th>操作时间</th>
-                  <th>操作</th>
+                  <th style="width: 60px;">ID</th>
+                  <th style="min-width: 200px; max-width: 300px;">原文件名</th>
+                  <th style="min-width: 150px; max-width: 200px;">子文件名称</th>
+                  <th style="width: 100px;">大小 (MB)</th>
+                  <th style="width: 100px;">时长</th>
+                  <th style="width: 150px;">上传时间</th>
+                  <th style="width: 100px;">上传耗时</th>
+                  <th style="min-width: 200px; max-width: 400px;">下载链接</th>
+                  <th style="width: 150px;">操作</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -353,6 +436,17 @@
           });
         }
 
+        // 格式化时长
+        function formatDuration(seconds) {
+          if (!seconds || seconds <= 0) return "00:00:00";
+          var hours = Math.floor(seconds / 3600);
+          var minutes = Math.floor((seconds % 3600) / 60);
+          var secs = Math.floor(seconds % 60);
+          return (hours < 10 ? "0" : "") + hours + ":" + 
+                 (minutes < 10 ? "0" : "") + minutes + ":" + 
+                 (secs < 10 ? "0" : "") + secs;
+        }
+
         // 加载历史记录
         function loadHistory() {
           $.get("/convert_history", function (res) {
@@ -362,20 +456,32 @@
             var tbody = $("#history-table tbody");
             tbody.empty();
             if (!res.data || !res.data.length) {
-              tbody.append("<tr><td colspan='6'>暂无记录</td></tr>");
+              tbody.append("<tr><td colspan='9'>暂无记录</td></tr>");
               return;
             }
             res.data.forEach(function (item, index) {
               // 创建播放和下载按钮
               var playBtn = `<button type="button" class="layui-btn layui-btn-xs layui-btn-normal" onclick="window.open('${item.url}', '_blank')"><i class="layui-icon layui-icon-play"></i> 播放</button>`;
               var downloadBtn = `<a href="${item.url}" download="${item.file_name}" class="layui-btn layui-btn-xs"><i class="layui-icon layui-icon-download-circle"></i> 下载</a>`;
+              // 子文件名称：如果有就显示，没有就留空
+              var originalNameDisplay = item.original_name || "";
+              var originalNameTitle = originalNameDisplay || "暂无子文件名称";
+              // 时长：优先使用 file_duration_str，否则使用 file_duration 格式化
+              var durationDisplay = item.file_duration_str || formatDuration(item.file_duration || 0);
+              // 上传耗时
+              var uploadDurationDisplay = item.upload_duration ? (item.upload_duration.toFixed(3) + "秒") : "-";
+              // 下载链接
+              var downloadUrlDisplay = item.url || item.download_url || "";
               var tr = `
                 <tr>
                   <td>${item.id || (index + 1)}</td>
-                  <td>${item.file_name}</td>
-                  <td>${item.original_name || "-"}</td>
+                  <td class="file-name-cell" title="${item.file_name}">${item.file_name}</td>
+                  <td class="original-name-cell" title="${originalNameTitle}">${originalNameDisplay}</td>
                   <td>${item.size_mb !== undefined ? item.size_mb.toFixed(2) : ((item.size / (1024 * 1024)).toFixed(2))}</td>
-                  <td>${item.mtime_str || ""}</td>
+                  <td>${durationDisplay}</td>
+                  <td>${item.mtime_str || item.upload_time || ""}</td>
+                  <td>${uploadDurationDisplay}</td>
+                  <td class="download-url-cell"><a href="${downloadUrlDisplay}" target="_blank" style="color: #1E9FFF;">${downloadUrlDisplay}</a></td>
                   <td>${playBtn}&nbsp;&nbsp;${downloadBtn}</td>
                 </tr>
               `;
