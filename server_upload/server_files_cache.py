@@ -178,18 +178,36 @@ def _update_cache():
     try:
         _is_updating = True
         print("[ServerFilesCache] 开始从服务器更新文件列表...")
+        
+        # 保留数据库中已有的 original_name（只在上传时写入，同步时保留）
+        existing_original_names = {}
+        if USE_MYSQL:
+            try:
+                db_module.init_database()
+                existing_files = db_module.get_files(limit=10000)
+                for f in existing_files:
+                    file_name = f.get('file_name', '')
+                    original_name = f.get('original_name', '')
+                    if file_name and original_name:
+                        # 保留数据库中已有的 original_name（上传时写入的值）
+                        existing_original_names[file_name] = original_name
+            except Exception as e:
+                print(f"[ServerFilesCache] 读取现有原始文件名失败: {e}")
+        
         files = upload_to_server_tool.list_server_files(limit=1000)  # 获取更多文件
         
         # 处理数据格式：确保符合新的数据库结构
-        # list_server_files 返回的 id 是文件名，会被 save_files 用作 file_id
-        # original_name 如果和 file_name 相同，save_files 会自动清空
         processed_files = []
         for file_info in files:
+            file_name = file_info.get('file_name', '')
+            # 优先使用数据库中已有的 original_name（保留上传时写入的值）
+            original_name = existing_original_names.get(file_name, '')
+            
             # 确保数据格式正确
             processed_file = {
                 'id': file_info.get('id', ''),  # 文件名，会被用作 file_id
-                'file_name': file_info.get('file_name', ''),
-                'original_name': file_info.get('original_name', ''),  # save_files 会处理，如果和 file_name 相同则留空
+                'file_name': file_name,
+                'original_name': original_name,  # 保留数据库中已有的原始文件名
                 'upload_time': file_info.get('upload_time', ''),
                 'upload_duration': file_info.get('upload_duration'),
                 'uploader_ip': file_info.get('uploader_ip', ''),

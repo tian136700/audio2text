@@ -141,13 +141,13 @@
       }
       .upload-logs {
         margin-top: 20px;
-        display: none;
+        display: none; /* 取消上传日志显示 */
         border: 1px solid #e6e6e6;
         border-radius: 4px;
         background: #f8f8f8;
       }
       .upload-logs.active {
-        display: block;
+        display: none;
       }
       .upload-logs-header {
         padding: 10px 15px;
@@ -171,6 +171,23 @@
       .upload-logs-content .log-line {
         margin: 2px 0;
         word-break: break-all;
+      }
+      /* 每条历史记录右侧的上传进度条 */
+      .row-upload-progress {
+        width: 100%;
+        height: 16px;
+        background: #f2f2f2;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .row-upload-progress-inner {
+        height: 100%;
+        background: #16b777;
+        color: #fff;
+        font-size: 12px;
+        line-height: 16px;
+        text-align: center;
+        white-space: nowrap;
       }
       .upload-logs-content .log-time {
         color: #999;
@@ -259,12 +276,13 @@
                 <tr>
                   <th style="width: 50px;"><input type="checkbox" id="select-all" lay-skin="primary" lay-filter="select-all"></th>
                   <th style="width: 60px;">ID</th>
-                  <th style="min-width: 200px; max-width: 300px;">文件名</th>
+                  <th style="min-width: 200px; max-width: 300px;">服务器上文件名称</th>
                   <th style="min-width: 150px; max-width: 200px;">原文件中文名称</th>
                   <th style="width: 150px;">上传时间</th>
                   <th style="width: 100px;">文件大小</th>
                   <th style="width: 100px;">文件时长</th>
                   <th style="min-width: 200px; max-width: 400px;">下载链接</th>
+                  <th style="width: 120px;">上传进度</th>
                   <th style="width: 150px;">缓存更新时间</th>
                   <th style="width: 150px;">操作</th>
                 </tr>
@@ -403,6 +421,111 @@
           }
         }
         
+        // 当前正在上传的记录ID对应的行内进度条
+        var currentUploadRecordId = null;
+        var currentUploadProgressEl = null;
+        
+        function addUploadingRow(record) {
+          var tbody = $("#history-table tbody");
+          // 如果当前只有“暂无记录”，先清空
+          var firstRow = tbody.find("tr:first");
+          if (firstRow.length && firstRow.find("td").length === 1) {
+            tbody.empty();
+          }
+          
+          var originalName = record.original_name || '';
+          var originalNameDisplay = originalName;
+          var originalNameTitle = originalName || '暂无中文名称';
+          
+          var tr = `
+            <tr data-id="${record.id || ''}" class="uploading-row">
+              <td><input type="checkbox" class="row-checkbox" lay-skin="primary" data-id="${record.id || ''}"></td>
+              <td>${record.id || ''}</td>
+              <td class="file-name-cell" title="">(正在上传到服务器...)</td>
+              <td class="original-name-cell" title="${originalNameTitle}">${originalNameDisplay}</td>
+              <td>${record.upload_time || ""}</td>
+              <td>${record.file_size_mb !== undefined ? record.file_size_mb + ' MB' : ''}</td>
+              <td>${record.file_duration_str || ''}</td>
+              <td class="download-url-cell"></td>
+              <td>
+                <div class="row-upload-progress">
+                  <div class="row-upload-progress-inner" style="width: 0%;">0%</div>
+                </div>
+              </td>
+              <td title="服务器文件列表的缓存更新时间"></td>
+              <td>上传中...</td>
+            </tr>
+          `;
+          tbody.prepend(tr);
+          
+          currentUploadRecordId = record.id || null;
+          currentUploadProgressEl = tbody.find(".row-upload-progress-inner").first();
+          
+          // 渲染复选框
+          form.render('checkbox');
+        }
+        
+        function updateUploadingProgress(percent) {
+          if (!currentUploadProgressEl) return;
+          if (percent < 0) percent = 0;
+          if (percent > 100) percent = 100;
+          currentUploadProgressEl.css('width', percent + '%').text(percent + '%');
+        }
+        
+        // 更新上传完成后的记录行（立即显示服务器文件名等信息）
+        // 返回 true 表示成功更新，false 表示未找到对应行
+        function updateUploadedRow(record) {
+          // 优先使用 record.id，如果不存在则使用 currentUploadRecordId
+          var recordId = record.id || currentUploadRecordId;
+          if (!recordId) {
+            console.warn("[updateUploadedRow] 没有找到记录ID");
+            return false;
+          }
+          
+          // 尝试多种方式查找行
+          var $row = $("tr[data-id='" + recordId + "']");
+          if ($row.length === 0) {
+            // 如果找不到，尝试通过 original_name 查找（上传中的行）
+            var originalName = record.original_name || '';
+            if (originalName) {
+              $row = $("tr.uploading-row").has("td.original-name-cell:contains('" + originalName + "')");
+            }
+          }
+          
+          if ($row.length === 0) {
+            console.warn("[updateUploadedRow] 没有找到对应的行，recordId:", recordId, "record:", record);
+            return false;
+          }
+          
+          // 更新服务器文件名
+          $row.find(".file-name-cell").text(record.file_name || '').attr('title', record.file_name || '');
+          
+          // 更新下载链接
+          var downloadUrl = record.download_url || '';
+          if (downloadUrl) {
+            $row.find(".download-url-cell").html('<a href="' + downloadUrl + '" target="_blank" style="color: #1E9FFF;">' + downloadUrl + '</a>');
+          } else {
+            $row.find(".download-url-cell").html('');
+          }
+          
+          // 更新操作列
+          var deleteBtn = '';
+          if (record.id) {
+            deleteBtn = '<button type="button" class="layui-btn layui-btn-sm layui-btn-primary" onclick="copyUrl(\'' + (downloadUrl || '') + '\')">复制链接</button> ';
+            deleteBtn += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteUpload(\'' + record.id + '\', this)">删除</button>';
+          }
+          $row.find("td:last").html(deleteBtn);
+          
+          // 更新进度条为 100%
+          $row.find(".row-upload-progress-inner").css('width', '100%').text('100%');
+          
+          // 移除上传中的样式
+          $row.removeClass("uploading-row");
+          
+          console.log("[updateUploadedRow] 成功更新行，recordId:", recordId);
+          return true;
+        }
+        
         // 文件上传（使用 XMLHttpRequest 实现进度条）
         var uploadBtn = $("#upload");
         uploadBtn.on("click", function() {
@@ -437,15 +560,6 @@
             element.progress("upload-progress", "0%");
             $("#progress-text").text("0% - 开始上传...");
             
-            // 清空之前的日志
-            clearUploadLogs();
-            
-            // 添加初始日志
-            var fileSize = formatFileSize(file.size);
-            addUploadLog("准备上传文件: " + file.name, "info");
-            addUploadLog("文件大小: " + fileSize, "info");
-            addUploadLog("开始上传...", "info");
-            
             // 使用 FormData 和 XMLHttpRequest 上传
             var formData = new FormData();
             formData.append("file", file);
@@ -479,16 +593,12 @@
                 $("#progress-text").text(percent + "% - 正在上传... (" + formatFileSize(e.loaded) + " / " + formatFileSize(e.total) + ")");
                 
                 // 每 500ms 更新一次日志（避免过于频繁）
-                if (percent < 100 && (e.loaded % 50000 < 1000 || percent % 5 === 0)) {
-                  var logMsg = "上传进度: " + percent + "% | 已上传: " + formatFileSize(e.loaded) + " / " + formatFileSize(e.total) + 
-                               " | 速度: " + speedStr + " | 已用时间: " + elapsedStr + " | 剩余时间: " + remainingTime;
-                  addUploadLog(logMsg, "info");
-                }
+                // 更新当前记录的行内进度（本地到 Flask 的上传进度）
+                updateUploadingProgress(percent);
                 
                 if (percent >= 100) {
                   // 文件上传完成，但服务器可能还在处理
                   $("#progress-text").text("100% - 上传完成，正在处理...");
-                  addUploadLog("文件上传完成，等待服务器处理...", "info");
                 }
               }
             }, false);
@@ -516,93 +626,79 @@
                   
                   // 通过 fetch 读取 SSE 流式响应
                   var tempFile = res.data.temp_file;
-                  var formData = new FormData();
-                  formData.append("temp_file", tempFile);
+                  var originalName = res.data.filename || file.name;  // 浏览器里选择的原始文件名
+                  var record = res.data.record || null;               // 数据库中的占位记录
+                  
+                  if (record) {
+                    addUploadingRow(record); // 在历史记录中插入“上传中”这一行
+                    // 本地上传已经完成，先把进度条重置为 0，后续由服务器上传完成后设置为 100%
+                    updateUploadingProgress(0);
+                  }
+                  
+                  var formData2 = new FormData();
+                  formData2.append("temp_file", tempFile);
+                  formData2.append("original_name", originalName);
+                  if (record && record.id) {
+                    formData2.append("record_id", record.id);
+                  }
                   
                   fetch("/upload_to_server_process", {
                     method: "POST",
-                    body: formData
+                    body: formData2
                   }).then(function(response) {
                     if (!response.ok) {
                       throw new Error("HTTP " + response.status);
                     }
-                    
-                    var reader = response.body.getReader();
-                    var decoder = new TextDecoder();
-                    var buffer = "";
-                    
-                    function readStream() {
-                      reader.read().then(function(result) {
-                        if (result.done) {
-                          return;
+                    return response.json();
+                  }).then(function(endData) {
+                    if (endData.code === 0) {
+                      element.progress("upload-progress", "100%");
+                      $("#progress-text").text("100% - 处理完成！");
+                      
+                      // 行内进度条设为 100%
+                      updateUploadingProgress(100);
+                      
+                      // 显示结果
+                      var record = endData.data;
+                      
+                      // 直接从数据库获取所有数据并刷新列表（确保显示最新数据）
+                      setTimeout(function() {
+                        loadHistory();
+                      }, 300);
+                      
+                      // 自动刷新倒计时时间（秒），改这里就可以
+                      var AUTO_REFRESH_SECONDS = 3;
+                      
+                      $("#result-content").html(`
+                        <h3 style="color: #5FB878;">✅ 上传成功！</h3>
+                        <p><strong>文件名：</strong>${record.file_name}</p>
+                        <p><strong>文件大小：</strong>${record.file_size_mb} MB</p>
+                        <p><strong>文件时长：</strong>${record.file_duration_str}</p>
+                        <p><strong>下载链接：</strong><a href="${record.download_url}" target="_blank">${record.download_url}</a></p>
+                        <p id="countdown-text" style="color: #1E9FFF; font-weight: bold; margin-top: 15px;">页面将在 <span id="countdown-number">${AUTO_REFRESH_SECONDS}</span> 秒后自动刷新...</p>
+                      `);
+                      $("#upload-result").addClass("active");
+                      
+                      // 倒计时 AUTO_REFRESH_SECONDS 秒后刷新页面
+                      var countdown = AUTO_REFRESH_SECONDS;
+                      var countdownInterval = setInterval(function() {
+                        countdown--;
+                        var $countdownNumber = $("#countdown-number");
+                        if ($countdownNumber.length) {
+                          $countdownNumber.text(countdown);
                         }
                         
-                        buffer += decoder.decode(result.value, { stream: true });
-                        var lines = buffer.split("\n");
-                        buffer = lines.pop(); // 保留最后一行（可能不完整）
-                        
-                        for (var i = 0; i < lines.length; i++) {
-                          var line = lines[i].trim();
-                          if (!line) continue;
-                          
-                          if (line.startsWith("data: ")) {
-                            var data = line.substring(6);
-                            addUploadLog(data, "info");
-                          } else if (line.startsWith("event: end")) {
-                            // 下一行应该是 data: {...}
-                            if (i + 1 < lines.length) {
-                              var nextLine = lines[i + 1];
-                              if (nextLine.startsWith("data: ")) {
-                                try {
-                                  var endData = JSON.parse(nextLine.substring(6));
-                                  if (endData.code === 0) {
-                                    element.progress("upload-progress", "100%");
-                                    $("#progress-text").text("100% - 处理完成！");
-                                    addUploadLog("服务器处理完成", "success");
-                                    
-                                    // 显示结果
-                                    var record = endData.data;
-                                    addUploadLog("新文件名: " + record.file_name, "success");
-                                    addUploadLog("文件时长: " + record.file_duration_str, "success");
-                                    addUploadLog("下载链接: " + record.download_url, "success");
-                                    
-                                    $("#result-content").html(`
-                                      <h3 style="color: #5FB878;">✅ 上传成功！</h3>
-                                      <p><strong>文件名：</strong>${record.file_name}</p>
-                                      <p><strong>文件大小：</strong>${record.file_size_mb} MB</p>
-                                      <p><strong>文件时长：</strong>${record.file_duration_str}</p>
-                                      <p><strong>下载链接：</strong><a href="${record.download_url}" target="_blank">${record.download_url}</a></p>
-                                    `);
-                                    $("#upload-result").addClass("active");
-                                    
-                                    // 刷新历史记录
-                                    setTimeout(function() {
-                                      loadHistory();
-                                    }, 500);
-                                  } else {
-                                    addUploadLog("处理失败: " + endData.msg, "error");
-                                    layer.alert("处理失败：" + endData.msg, { title: false });
-                                    $("#progress-container").removeClass("active");
-                                  }
-                                } catch (e) {
-                                  addUploadLog("解析响应失败: " + e.message, "error");
-                                }
-                                i++; // 跳过下一行
-                              }
-                            }
-                          }
+                        if (countdown <= 0) {
+                          clearInterval(countdownInterval);
+                          window.location.reload();
                         }
-                        
-                        readStream();
-                      }).catch(function(error) {
-                        addUploadLog("读取流失败: " + error.message, "error");
-                        $("#progress-container").removeClass("active");
-                      });
+                      }, 1000);
+                    } else {
+                      layer.alert("处理失败：" + (endData.msg || "未知错误"), { title: false });
+                      $("#progress-container").removeClass("active");
                     }
-                    
-                    readStream();
                   }).catch(function(error) {
-                    addUploadLog("SSE 连接错误: " + error.message, "error");
+                    layer.alert("上传处理失败：" + error.message, { title: false });
                     $("#progress-container").removeClass("active");
                   });
                   
@@ -704,7 +800,7 @@
             res.data.forEach(function (item, index) {
               console.log("[loadHistory] 处理第", index + 1, "条记录:", item);
               var originalName = item.original_name || '';
-              var originalNameDisplay = originalName || '-';
+              var originalNameDisplay = originalName;
               var originalNameTitle = originalName || '暂无中文名称';
               var tr = `
                 <tr data-id="${item.id || ''}">
@@ -716,6 +812,11 @@
                   <td>${item.file_size_mb !== undefined ? item.file_size_mb + ' MB' : ((item.file_size / (1024 * 1024)).toFixed(2) + ' MB')}</td>
                   <td>${item.file_duration_str || formatDuration(item.file_duration || 0)}</td>
                   <td class="download-url-cell"><a href="${item.download_url}" target="_blank" style="color: #1E9FFF;">${item.download_url}</a></td>
+                  <td>
+                    <div class="row-upload-progress">
+                      <div class="row-upload-progress-inner" style="width: 100%;">100%</div>
+                    </div>
+                  </td>
                   <td title="服务器文件列表的缓存更新时间">${cacheUpdateTime}</td>
                   <td>
                     <button type="button" class="layui-btn layui-btn-sm layui-btn-primary" onclick="copyUrl('${item.download_url}')">复制链接</button>

@@ -8,11 +8,12 @@ import os
 import queue
 import threading
 import json
+from datetime import datetime
 from flask import request, render_template, jsonify, Response, stream_with_context
 from stslib import cfg
 import stslib
 from werkzeug.utils import secure_filename
-from server_upload import upload_to_server_tool, server_files_cache
+from server_upload import upload_to_server_tool, server_files_cache, db as db_module
 
 
 def upload_to_server_page():
@@ -39,17 +40,67 @@ def upload_to_server():
             return jsonify({"code": 1, "msg": "文件名为空"})
         
         # 保存临时文件
-        filename = secure_filename(file.filename)
-        temp_file = os.path.join(cfg.TMP_DIR, filename)
+        raw_filename = file.filename or ""  # 浏览器选择的原始文件名（保留中文，用于 original_name）
+        # 临时文件路径用安全文件名，防止路径遍历（如 ../../etc/passwd）
+        safe_filename = secure_filename(raw_filename) or "unnamed_file"
+        print(f"[upload_to_server] 源文件名称(原始): {raw_filename!r}")
+        print(f"[upload_to_server] 源文件名称(安全化): {safe_filename!r}")
+        temp_file = os.path.join(cfg.TMP_DIR, safe_filename)
         file.save(temp_file)
         
-        # 返回临时文件路径，让前端通过 SSE 获取处理进度
+        # ================== 先写入数据库一条占位记录 ==================
+        try:
+            file_size = os.path.getsize(temp_file)
+        except Exception:
+            file_size = 0
+        
+        file_size_mb = round(file_size / (1024 * 1024), 2) if file_size else 0
+        # 获取本地临时文件的时长，用于占位显示
+        try:
+            file_duration = upload_to_server_tool.get_audio_duration(temp_file)
+        except Exception:
+            file_duration = 0
+        file_duration_str = upload_to_server_tool.format_duration(file_duration) if file_duration > 0 else "00:00:00"
+        
+        upload_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        uploader_ip = request.remote_addr or ""
+        
+        # 占位记录：file_name 先留空，original_name 使用浏览器选择的原始文件名（保留中文）
+        placeholder_record = {
+            "id": safe_filename,          # 临时 id，保存后会被 new_id 覆盖
+            "file_name": "",              # 服务器文件名稍后更新
+            "original_name": raw_filename, # 原文件中文名称 = 上传前的文件名（保留中文）
+            "upload_time": upload_time,
+            "upload_duration": None,
+            "uploader_ip": uploader_ip,
+            "file_size": file_size,
+            "file_size_mb": file_size_mb,
+            "file_duration": round(file_duration, 2) if file_duration else 0,
+            "file_duration_str": file_duration_str,
+            "download_url": "",
+            "remote_path": "",
+        }
+        
+        try:
+            new_id = db_module.save_single_file(placeholder_record)
+            if new_id:
+                placeholder_record["id"] = new_id  # 使用自增ID
+        except Exception as e:
+            from flask import current_app
+            if current_app:
+                current_app.logger.error(f'[upload_to_server] 保存占位记录失败: {e}')
+            # 占位记录失败不影响后续上传，但前端可能无法显示进度条
+            placeholder_record["id"] = None
+        
+        # 返回临时文件路径和占位记录信息，让前端立刻在历史记录中显示这一条，并开始真正上传
         return jsonify({
             "code": 0,
             "msg": "文件接收成功",
             "data": {
                 "temp_file": temp_file,
-                "filename": filename
+                # 原始文件名（浏览器里选择的文件名，用于"原文件中文名称"列，保留中文）
+                "filename": raw_filename,
+                "record": placeholder_record
             }
         })
             
@@ -60,203 +111,49 @@ def upload_to_server():
 
 
 def upload_to_server_process():
-    """处理上传到服务器的任务（使用 SSE 推送进度）"""
-    def send_log(message):
-        """发送日志到前端（SSE 格式）"""
-        message_escaped = message.replace('\n', '\\n').replace('\r', '\\r')
-        return f"data: {message_escaped}\n\n"
-    
-    def generate():
-        """生成器函数，用于流式传输"""
-        # 在请求上下文中获取数据（在启动线程之前）
+    """处理上传到服务器的任务（简化版：不再推送日志，只返回最终结果）"""
+    try:
         temp_file = request.form.get("temp_file", "").strip()
-        if not temp_file:
-            yield send_log("[上传] 错误：临时文件路径为空")
-            yield "event: end\ndata: " + json.dumps({
-                "code": 1,
-                "msg": "临时文件路径为空"
-            }, ensure_ascii=False) + "\n\n"
-            return
+        original_name = request.form.get("original_name", "").strip()
+        record_id = request.form.get("record_id", "").strip()
+        print(f"[upload_to_server_process] 源文件名称(前端传入): {original_name!r}")
         
-        log_queue = queue.Queue()
-        result_container = {'result': None, 'error': None, 'finished': False}
+        if not temp_file or not os.path.exists(temp_file):
+            return jsonify({"code": 1, "msg": "临时文件不存在"})
         
-        def log_callback(msg):
-            """日志回调函数，将日志放入队列"""
-            try:
-                log_queue.put(msg, timeout=0.1)
-            except queue.Full:
-                # 队列满了，忽略这条日志（避免阻塞）
-                pass
-            except Exception as e:
-                # 其他错误，记录但不影响上传任务
-                print(f"[upload_to_server_process] log_callback 错误: {e}")
+        # 获取客户端 IP 地址
+        uploader_ip = request.remote_addr
+        if request.headers.get('X-Forwarded-For'):
+            uploader_ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()
+        elif request.headers.get('X-Real-IP'):
+            uploader_ip = request.headers.get('X-Real-IP')
         
-        def upload_task(temp_file_path):
-            """在后台线程中执行上传任务"""
-            try:
-                if not temp_file_path or not os.path.exists(temp_file_path):
-                    result_container['error'] = Exception("临时文件不存在")
-                    return
-                
-                result_container['result'] = upload_to_server_tool.upload_file_to_server(
-                    temp_file_path, 
-                    log_callback=log_callback
-                )
-                
-                # 删除临时文件
-                try:
-                    os.remove(temp_file_path)
-                    # 尝试发送日志，但如果客户端已断开则忽略错误
-                    try:
-                        log_callback("[上传] 临时文件已清理")
-                    except (BrokenPipeError, ConnectionError, OSError):
-                        pass  # 客户端已断开，忽略
-                except:
-                    pass
-                    
-            except Exception as e:
-                error_msg = str(e)
-                # 检查是否是 Broken pipe 错误，如果是则不作为错误处理（因为上传可能已成功）
-                if 'Broken pipe' in error_msg or 'BrokenPipeError' in error_msg or 'Errno 32' in error_msg:
-                    # Broken pipe 错误，检查上传是否成功
-                    if result_container.get('result') and result_container['result'].get("success"):
-                        # 上传成功，只是发送日志时出错，不作为错误
-                        print(f"[upload_to_server_process] Broken pipe 错误，但上传已成功: {e}")
-                    else:
-                        # 上传失败，记录错误
-                        result_container['error'] = e
-                else:
-                    # 其他错误，正常处理
-                    result_container['error'] = e
-            finally:
-                result_container['finished'] = True
+        # 执行真正的上传任务（同步执行），并在内部根据 record_id 更新数据库记录
+        result = upload_to_server_tool.upload_file_to_server(
+            temp_file,
+            log_callback=None,  # 不再推送日志
+            uploader_ip=uploader_ip,
+            original_name=original_name or None,
+            record_id=record_id or None
+        )
         
+        # 删除临时文件
         try:
-            yield send_log("[上传][Flask] 收到处理请求，开始处理...")
-            
-            # 启动上传任务线程（传递数据，而不是在线程中访问 request）
-            task_thread = threading.Thread(target=upload_task, args=(temp_file,))
-            task_thread.daemon = True
-            task_thread.start()
-            
-            # 实时推送日志
-            while not result_container['finished'] or not log_queue.empty():
-                try:
-                    log_msg = log_queue.get(timeout=0.1)
-                    yield send_log(log_msg)
-                except queue.Empty:
-                    continue
-                except (GeneratorExit, BrokenPipeError, ConnectionError, OSError) as e:
-                    # 客户端断开连接，优雅退出
-                    print(f"[upload_to_server_process] 客户端断开连接: {e}")
-                    return
-                except Exception as e:
-                    # 其他错误，记录但继续
-                    print(f"[upload_to_server_process] 发送日志时出错: {e}")
-                    continue
-            
-            # 等待任务完成
-            task_thread.join(timeout=30)
-            
-            # 发送剩余的日志
-            while not log_queue.empty():
-                try:
-                    log_msg = log_queue.get(timeout=0.1)
-                    yield send_log(log_msg)
-                except queue.Empty:
-                    break
-                except (GeneratorExit, BrokenPipeError, ConnectionError, OSError) as e:
-                    # 客户端断开连接，优雅退出
-                    print(f"[upload_to_server_process] 客户端断开连接: {e}")
-                    return
-                except Exception as e:
-                    print(f"[upload_to_server_process] 发送日志时出错: {e}")
-                    break
-            
-            # 发送最终结果
-            # 先检查上传是否成功（即使有 Broken pipe 错误，如果上传成功也应该返回成功）
-            upload_success = result_container['result'] and result_container['result'].get("success")
-            is_broken_pipe_error = False
-            
-            # 检查错误是否是 Broken pipe
-            if result_container.get('error'):
-                error_msg = str(result_container['error'])
-                if 'Broken pipe' in error_msg or 'BrokenPipeError' in error_msg or 'Errno 32' in error_msg:
-                    is_broken_pipe_error = True
-            
-            try:
-                if upload_success:
-                    # 上传成功，即使有 Broken pipe 错误也返回成功
-                    yield send_log("[上传] 处理完成 ✅")
-                    yield "event: end\ndata: " + json.dumps({
-                        "code": 0,
-                        "msg": "上传成功",
-                        "data": result_container['result'].get("record")
-                    }, ensure_ascii=False) + "\n\n"
-                elif is_broken_pipe_error:
-                    # Broken pipe 错误，但检查上传是否实际成功（可能在上传过程中成功但最后发送日志时出错）
-                    if result_container.get('result') and result_container['result'].get("success"):
-                        yield send_log("[上传] 处理完成 ✅")
-                        yield "event: end\ndata: " + json.dumps({
-                            "code": 0,
-                            "msg": "上传成功",
-                            "data": result_container['result'].get("record")
-                        }, ensure_ascii=False) + "\n\n"
-                    else:
-                        # Broken pipe 且上传失败，返回错误
-                        error_msg = str(result_container['error'])
-                        yield send_log(f"[上传] 处理失败: {error_msg}")
-                        yield "event: end\ndata: " + json.dumps({
-                            "code": 1, 
-                            "msg": error_msg
-                        }, ensure_ascii=False) + "\n\n"
-                elif result_container.get('error'):
-                    # 真正的错误（不是 Broken pipe）
-                    error_msg = str(result_container['error'])
-                    yield send_log(f"[上传] 处理失败: {error_msg}")
-                    yield "event: end\ndata: " + json.dumps({
-                        "code": 1, 
-                        "msg": error_msg
-                    }, ensure_ascii=False) + "\n\n"
-                else:
-                    # 其他错误
-                    error_msg = result_container['result'].get('error', '未知错误') if result_container.get('result') else '未知错误'
-                    yield send_log(f"[上传] 处理失败: {error_msg}")
-                    yield "event: end\ndata: " + json.dumps({
-                        "code": 1,
-                        "msg": error_msg
-                    }, ensure_ascii=False) + "\n\n"
-            except (GeneratorExit, BrokenPipeError, ConnectionError, OSError) as e:
-                # 客户端断开连接，但任务已完成
-                # 如果上传成功，记录成功日志；否则记录错误
-                if upload_success:
-                    print(f"[upload_to_server_process] 上传成功，但客户端断开连接: {e}")
-                else:
-                    print(f"[upload_to_server_process] 发送最终结果时客户端断开连接: {e}")
-                return
-                
-        except (GeneratorExit, BrokenPipeError, ConnectionError, OSError) as e:
-            # 客户端断开连接，优雅退出
-            print(f"[upload_to_server_process] 客户端断开连接: {e}")
-            return
-        except Exception as e:
-            try:
-                yield send_log(f"[上传][Flask] 错误: {str(e)}")
-                yield "event: end\ndata: " + json.dumps({
-                    "code": 1,
-                    "msg": str(e)
-                }, ensure_ascii=False) + "\n\n"
-            except (GeneratorExit, BrokenPipeError, ConnectionError, OSError):
-                # 即使发送错误信息时也断开，直接返回
-                print(f"[upload_to_server_process] 发送错误信息时客户端断开连接")
-                return
-    
-    return Response(generate(), mimetype='text/event-stream', headers={
-        'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no',
-        'Connection': 'keep-alive'
-    })
+            os.remove(temp_file)
+        except Exception:
+            pass
+        
+        if result.get("success"):
+            record = result.get("record", {})
+            return jsonify({"code": 0, "msg": "上传成功", "data": record})
+        else:
+            error_msg = result.get("error", "上传失败")
+            return jsonify({"code": 1, "msg": error_msg})
+    except Exception as e:
+        from flask import current_app
+        if current_app:
+            current_app.logger.error(f'[upload_to_server_process]error: {e}')
+        return jsonify({"code": 1, "msg": str(e)})
 
 
 def upload_history():
