@@ -90,9 +90,8 @@ ffmpeg
 ffmpeg.exe
 ffprobe
 ffprobe.exe
-
-# 个人隐私 / 示例数据（包含心理咨询等敏感内容的本地文件，不提交到仓库）
 server_upload/upload_history.json
+server_upload/server_files_cache.json
 com.apple.update_server_cache.plist
 com.apple.update_server_cache.plist.bak
 SYSTEM_TIMER_SETUP.md
