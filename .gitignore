@@ -97,3 +97,4 @@ com.apple.update_server_cache.plist
 com.apple.update_server_cache.plist.bak
 SYSTEM_TIMER_SETUP.md
 install_system_timer.sh
+static/cut/.uploaded_files.json
