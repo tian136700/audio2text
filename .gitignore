@@ -91,7 +91,9 @@ ffmpeg.exe
 ffprobe
 ffprobe.exe
 
-# 注意：以下文件应该提交到 git
-# - set.ini.example (配置文件模板，不包含真实 token)
-# - test.py (API 使用示例)
-# - testcuda.py (CUDA 测试文件)
+# 个人隐私 / 示例数据（包含心理咨询等敏感内容的本地文件，不提交到仓库）
+server_upload/upload_history.json
+com.apple.update_server_cache.plist
+com.apple.update_server_cache.plist.bak
+SYSTEM_TIMER_SETUP.md
+install_system_timer.sh
