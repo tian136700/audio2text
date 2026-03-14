@@ -258,8 +258,17 @@
             <button type="button" class="toggle-btn" id="toggle-recognize-result">隐藏</button>
           </div>
           <div class="result-area" id="recognize-result">
-            <div id="recognize-status" class="small-text"></div>
-            <div id="recognize-timer" class="small-text" style="margin-top: 4px;"></div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <div>
+                <div id="recognize-status" class="small-text"></div>
+                <div id="recognize-timer" class="small-text" style="margin-top: 4px;"></div>
+              </div>
+              <div id="recognize-download-container" style="display:none;">
+                <button type="button" class="layui-btn layui-btn-sm layui-btn-normal" id="recognize-download-text-btn">
+                  下载文字
+                </button>
+              </div>
+            </div>
             <div id="recognize-preview" style="margin-top:10px; white-space: pre-wrap;"></div>
             <!-- 日志显示区域 -->
             <div style="margin-top:15px;">
@@ -351,6 +360,7 @@
         var currentFileUrl = ""; // 当前要识别的 URL
         var recognizeTimer = null; // 识别计时器
         var recognizeSeconds = 0;
+        var lastRecognizeRecordId = null; // 最近一次识别成功的记录ID
 
         // 切换来源
         form.on("radio", function (data) {
@@ -464,6 +474,8 @@
           $("#recognize-preview").text("");
           $("#recognize-raw").hide().text("");
           $("#recognize-logs").text(""); // 清空日志区域
+          $("#recognize-download-container").hide();
+          lastRecognizeRecordId = null;
 
           // 启动计时器
           if (recognizeTimer) {
@@ -504,6 +516,16 @@
                 $("#recognize-status").text("识别成功，时间：" + (record.created_at || ""));
                 $("#recognize-preview").text(record.preview || "(无预览文本)");
                 $("#recognize-raw").show().text(JSON.stringify(result, null, 2));
+
+                // 记录本次识别ID，并显示下载按钮
+                if (record.id) {
+                  lastRecognizeRecordId = record.id;
+                  $("#recognize-download-container").show();
+                } else {
+                  lastRecognizeRecordId = null;
+                  $("#recognize-download-container").hide();
+                }
+
                 layer.msg("识别成功", { icon: 1, time: 1500 });
                 loadAliyunHistory();
               } else {
@@ -635,9 +657,27 @@
           });
         }
 
+        // “下载文字”按钮点击事件：使用最近一次识别记录ID
+        $("#recognize-download-text-btn").click(function () {
+          if (!lastRecognizeRecordId) {
+            layer.msg("当前没有可下载的识别结果，请先完成一次识别。", { icon: 0, time: 2000 });
+            return;
+          }
+          window.open("/aliyun_download?id=" + lastRecognizeRecordId + "&type=text", "_blank");
+        });
+
         // 初始化
         loadServerFiles();
         loadAliyunHistory();
+
+        // 如果 URL 中带有 file_url 参数，则自动填充并准备识别（方便从上传页面跳转过来）
+        var params = new URLSearchParams(window.location.search);
+        var fileUrlFromQuery = params.get("file_url");
+        if (fileUrlFromQuery) {
+          currentFileUrl = fileUrlFromQuery;
+          $("#current-file-url").text("当前音频URL: " + currentFileUrl);
+          $("#recognize-result").show();
+        }
       });
     </script>
   </body>

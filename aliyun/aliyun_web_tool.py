@@ -59,6 +59,18 @@ def list_aliyun_history(limit=100):
     return _load_history(limit=limit)
 
 
+def get_latest_record_by_file_url(file_url: str):
+    """
+    根据音频 URL 获取最近一次识别记录（如果存在）
+    """
+    if not file_url:
+        return None
+    history = _load_history(limit=10000)
+    for r in history:
+        if r.get("file_url") == file_url:
+            return r
+    return None
+
 def get_record_by_id(record_id: str):
     """根据 ID 获取一条历史记录"""
     if not record_id:

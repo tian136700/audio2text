@@ -23,7 +23,7 @@ from routes.aliyun import recognize_stream as aliyun_recognize_stream_module
 from routes.aliyun import history as aliyun_history_module
 from routes.aliyun import download as aliyun_download_module
 from routes.aliyun import preview as aliyun_preview_module
-from routes.aliyun import local_files as aliyun_local_files_module
+from routes.aliyun import get_latest_by_url as aliyun_latest_by_url_module
 from routes.upload import handlers as upload_handlers_module
 from routes.convert import page as convert_page_module
 from routes.convert import convert_audio as convert_audio_module
@@ -205,6 +205,11 @@ def register_routes(app):
     def aliyun_preview():
         """预览阿里云识别结果（在浏览器新窗口中打开文本文件）"""
         return aliyun_preview_module.aliyun_preview()
+    
+    @app.route('/aliyun_latest_by_url', methods=['GET'])
+    def aliyun_latest_by_url():
+        """根据音频 URL 获取最近一次阿里云识别记录"""
+        return aliyun_latest_by_url_module.aliyun_latest_by_url()
     
     # Whisper 相关路由
     @app.route('/process', methods=['GET', 'POST'])

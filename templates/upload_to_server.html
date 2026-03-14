@@ -211,6 +211,22 @@
         height: auto;
         line-height: 1.5;
       }
+      /* 操作按钮区域：竖直居中排列，美观一点 */
+      .action-buttons {
+        display: flex;
+        flex-direction: column; /* 竖直排列 */
+        gap: 6px;               /* 按钮之间留一点间距 */
+        align-items: center;    /* 水平居中 */
+      }
+      .action-buttons .layui-btn {
+        min-width: 80px;
+        padding: 0 14px;
+      }
+      /* 表格内操作列整体居中 */
+      #history-table td:last-child,
+      #history-table th:last-child {
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -508,13 +524,20 @@
             $row.find(".download-url-cell").html('');
           }
           
-          // 更新操作列
-          var deleteBtn = '';
+          // 更新操作列（默认只有“转文字”和“删除”，下载文字按钮按需异步补上）
+          var opBtns = '';
           if (record.id) {
-            deleteBtn = '<button type="button" class="layui-btn layui-btn-sm layui-btn-primary" onclick="copyUrl(\'' + (downloadUrl || '') + '\')">复制链接</button> ';
-            deleteBtn += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteUpload(\'' + record.id + '\', this)">删除</button>';
+            opBtns += '<div class="action-buttons">';
+            opBtns += '<button type="button" class="layui-btn layui-btn-sm layui-btn-warm" onclick="convertToText(\'' + (record.download_url || '') + '\')">转文字</button>';
+            opBtns += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteUpload(\'' + record.id + '\', this)">删除</button>';
+            opBtns += '</div>';
           }
-          $row.find("td:last").html(deleteBtn);
+          $row.find("td:last").html(opBtns);
+
+          // 如果该记录已经在阿里云做过识别，则异步补上“下载文字”按钮
+          if (record.id && record.download_url) {
+            checkAndShowDownloadTextButton(record.id, record.download_url);
+          }
           
           // 更新进度条为 100%
           $row.find(".row-upload-progress-inner").css('width', '100%').text('100%');
@@ -819,16 +842,23 @@
                   </td>
                   <td title="服务器文件列表的缓存更新时间">${cacheUpdateTime}</td>
                   <td>
-                    <button type="button" class="layui-btn layui-btn-sm layui-btn-primary" onclick="copyUrl('${item.download_url}')">复制链接</button>
-                    ${
-                      item.id
-                        ? `<button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteUpload('${item.id}', this)">删除</button>`
-                        : ''
-                    }
+                    <div class="action-buttons">
+                      <button type="button" class="layui-btn layui-btn-sm layui-btn-warm" onclick="convertToText('${item.download_url || ''}')">转文字</button>
+                      ${
+                        item.id
+                          ? `<button type="button" class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteUpload('${item.id}', this)">删除</button>`
+                          : ''
+                      }
+                    </div>
                   </td>
                 </tr>
               `;
               tbody.append(tr);
+
+              // 如果该音频已经做过阿里云识别，则异步补上“下载文字”按钮
+              if (item.id && item.download_url) {
+                checkAndShowDownloadTextButton(item.id, item.download_url);
+              }
             });
             
             // 渲染复选框
@@ -867,14 +897,57 @@
                  (secs < 10 ? "0" : "") + secs;
         }
         
-        // 复制链接函数（全局）
-        window.copyUrl = function(url) {
-          var tempInput = $("<input>");
-          $("body").append(tempInput);
-          tempInput.val(url).select();
-          document.execCommand("copy");
-          tempInput.remove();
-          layer.msg("链接已复制到剪贴板", { icon: 1, time: 1000 });
+        // 转文字（使用阿里云语音识别，对该记录的下载URL进行识别）
+        window.convertToText = function(downloadUrl) {
+          if (!downloadUrl) {
+            layer.msg("当前记录没有可用的下载链接，无法转文字", { icon: 2, time: 1500 });
+            return;
+          }
+
+          // 打开阿里云识别页面，并带上 file_url，前端会直接调用 /aliyun_recognize_stream 进行识别
+          var url = "/aliyun_asr?" + $.param({ file_url: downloadUrl });
+          window.open(url, "_blank");
+        };
+
+        // 下载文字（如果该下载链接已经做过阿里云识别，则下载最近一次的文字结果）
+        window.downloadTextForUrl = function(downloadUrl) {
+          if (!downloadUrl) {
+            layer.msg("当前记录没有可用的下载链接，无法下载文字", { icon: 2, time: 1500 });
+            return;
+          }
+
+          $.get("/aliyun_latest_by_url", { file_url: downloadUrl }, function(res) {
+            if (res.code !== 0 || !res.data || !res.data.id) {
+              layer.msg(res.msg || "暂未找到该音频的识别结果，请先在阿里云语音识别页面完成一次识别。", { icon: 0, time: 2500 });
+              return;
+            }
+            var id = res.data.id;
+            window.open("/aliyun_download?id=" + id + "&type=text", "_blank");
+          }).fail(function() {
+            layer.msg("查询阿里云识别结果失败，请稍后重试。", { icon: 2, time: 2000 });
+          });
+        };
+
+        // 检查某个音频 URL 是否已有阿里云识别记录，如有则在对应行追加“下载文字”按钮
+        window.checkAndShowDownloadTextButton = function(recordId, downloadUrl) {
+          if (!recordId || !downloadUrl) {
+            return;
+          }
+          $.get("/aliyun_latest_by_url", { file_url: downloadUrl }, function(res) {
+            if (res.code !== 0 || !res.data || !res.data.id) {
+              // 没有识别记录，不显示按钮
+              return;
+            }
+            var $row = $("tr[data-id='" + recordId + "']");
+            if ($row.length === 0) return;
+            var $cell = $row.find("td").last();
+            if ($cell.find(".download-text-btn").length > 0) {
+              return; // 已经有按钮了
+            }
+            var btnHtml = '<button type="button" class="layui-btn layui-btn-sm layui-btn-normal download-text-btn" onclick="downloadTextForUrl(\'' + downloadUrl + '\')">下载文字</button> ';
+            // 直接在“删除”按钮前面插入
+            $cell.prepend(btnHtml);
+          });
         };
 
         // 删除上传记录（同时删除服务器文件和数据库记录）
